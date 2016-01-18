@@ -1,6 +1,6 @@
 
 /* Copyright 1998 by the Massachusetts Institute of Technology.
- * Copyright (C) 2004-2013 by Daniel Stenberg
+ * Copyright (C) 2004-2016 by Daniel Stenberg
  *
  * Permission to use, copy, modify, and distribute this
  * software and its documentation for any purpose and without
@@ -362,8 +362,11 @@ static void read_tcp_data(ares_channel channel, fd_set *read_fds,
               server->tcp_length = server->tcp_lenbuf[0] << 8
                 | server->tcp_lenbuf[1];
               server->tcp_buffer = malloc(server->tcp_length);
-              if (!server->tcp_buffer)
+              if (!server->tcp_buffer) {
                 handle_error(channel, i, now);
+                return; /* bail out on malloc failure. TODO: make this
+                           function return error codes */
+              }
               server->tcp_buffer_pos = 0;
             }
         }
@@ -388,8 +391,8 @@ static void read_tcp_data(ares_channel channel, fd_set *read_fds,
                */
               process_answer(channel, server->tcp_buffer, server->tcp_length,
                              i, 1, now);
-          if (server->tcp_buffer)
-                        free(server->tcp_buffer);
+              if (server->tcp_buffer)
+                free(server->tcp_buffer);
               server->tcp_buffer = NULL;
               server->tcp_lenbuf_pos = 0;
               server->tcp_buffer_pos = 0;
@@ -843,7 +846,7 @@ void ares__send_query(ares_channel channel, struct query *query,
  * portable.
  */
 static int setsocknonblock(ares_socket_t sockfd,    /* operate on this */
-                    int nonblock   /* TRUE or FALSE */)
+                           int nonblock   /* TRUE or FALSE */)
 {
 #if defined(USE_BLOCKING_SOCKETS)
 
@@ -900,7 +903,7 @@ static int configure_socket(ares_socket_t s, int family, ares_channel channel)
     struct sockaddr_in6 sa6;
   } local;
 
-  setsocknonblock(s, TRUE);
+  (void)setsocknonblock(s, TRUE);
 
 #if defined(FD_CLOEXEC) && !defined(MSDOS)
   /* Configure the socket fd as close-on-exec. */
