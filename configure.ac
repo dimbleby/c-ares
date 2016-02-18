@@ -12,6 +12,7 @@ AC_CONFIG_SRCDIR([ares_ipv6.h])
 AC_CONFIG_HEADERS([ares_config.h ares_build.h])
 AC_CONFIG_MACRO_DIR([m4])
 AM_MAINTAINER_MODE
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 CARES_CHECK_OPTION_DEBUG
 CARES_CHECK_OPTION_OPTIMIZE
@@ -875,6 +876,10 @@ squeeze LIBS
 squeeze CARES_PRIVATE_LIBS
 
 XC_CHECK_BUILD_FLAGS
+
+if test "x$cross_compiling" = "xno"; then
+  AC_CONFIG_SUBDIRS([test])
+fi
 
 AC_CONFIG_FILES([Makefile libcares.pc])
 AC_OUTPUT
