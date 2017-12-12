@@ -1010,10 +1010,10 @@ static int ares_ipv6_subnet_matches(const unsigned char netbase[16],
 
   /* Set remaining bits */
   for (i=(netmask / 8)*8; i<netmask; i++) {
-    mask[i / 8] |= 1 << ((7-i) % 8);
+    mask[i / 8] |= (1 << ((7-i) % 8)) & 0xFF;
   }
 
-  for (i=0; i<sizeof(ipaddr); i++) {
+  for (i=0; i<16; i++) {
     if ((netbase[i] & mask[i]) != (ipaddr[i] & mask[i]))
       return 0;
   }
@@ -1455,7 +1455,7 @@ static int get_SuffixList_Windows(char **outptr)
   DWORD keyNameBuffSize;
   DWORD keyIdx = 0;
   char *p = NULL;
-  char *pp;
+  const char *pp;
   size_t len = 0;
 
   *outptr = NULL;
@@ -1505,7 +1505,7 @@ static int get_SuffixList_Windows(char **outptr)
     {
       /* p can be comma separated (SearchList) */
       pp = p;
-      while (len = next_suffix(&pp, len))
+      while ((len = next_suffix(&pp, len)) != 0)
       {
         if (!contains_suffix(*outptr, pp, len))
           commanjoin(outptr, pp, len);
@@ -1641,6 +1641,7 @@ static int init_by_resolv_conf(ares_channel channel)
     ares_free(dns_servers);
   }
 
+#  ifdef HAVE___SYSTEM_PROPERTY_GET
   /* Old way using the system property still in place as
    * a fallback. Older android versions can still use this.
    * it's possible for older apps not not have added the new
@@ -1662,6 +1663,7 @@ static int init_by_resolv_conf(ares_channel channel)
       status = ARES_EOF;
     }
   }
+#  endif /* HAVE___SYSTEM_PROPERTY_GET */
 #elif defined(CARES_USE_LIBRESOLV)
   struct __res_state res;
   memset(&res, 0, sizeof(res));
