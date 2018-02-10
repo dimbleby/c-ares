@@ -262,7 +262,7 @@ done:
 
 /* ares_dup() duplicates a channel handle with all its options and returns a
    new channel handle */
-int ares_dup(ares_channel *dest, ares_channel src)
+int ares_dup(ares_channel *dest, const struct ares_channeldata *src)
 {
   struct ares_options opts;
   struct ares_addr_port_node *servers;
@@ -333,7 +333,7 @@ int ares_dup(ares_channel *dest, ares_channel src)
 }
 
 /* Save options from initialized channel */
-int ares_save_options(ares_channel channel, struct ares_options *options,
+int ares_save_options(const struct ares_channeldata *channel, struct ares_options *options,
                       int *optmask)
 {
   int i, j;

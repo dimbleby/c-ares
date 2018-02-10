@@ -28,7 +28,7 @@
 #include "ares_private.h"
 
 
-int ares_get_servers(ares_channel channel,
+int ares_get_servers(const struct ares_channeldata *channel,
                      struct ares_addr_node **servers)
 {
   struct ares_addr_node *srvr_head = NULL;
@@ -83,7 +83,7 @@ int ares_get_servers(ares_channel channel,
   return status;
 }
 
-int ares_get_servers_ports(ares_channel channel,
+int ares_get_servers_ports(const struct ares_channeldata *channel,
                            struct ares_addr_port_node **servers)
 {
   struct ares_addr_port_node *srvr_head = NULL;

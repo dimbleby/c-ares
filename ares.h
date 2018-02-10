@@ -329,14 +329,14 @@ CARES_EXTERN int ares_init_options(ares_channel *channelptr,
                                    struct ares_options *options,
                                    int optmask);
 
-CARES_EXTERN int ares_save_options(ares_channel channel,
+CARES_EXTERN int ares_save_options(const struct ares_channeldata *channel,
                                    struct ares_options *options,
                                    int *optmask);
 
 CARES_EXTERN void ares_destroy_options(struct ares_options *options);
 
 CARES_EXTERN int ares_dup(ares_channel *dest,
-                          ares_channel src);
+                          const struct ares_channeldata *src);
 
 CARES_EXTERN void ares_destroy(ares_channel channel);
 
@@ -441,7 +441,7 @@ CARES_EXTERN int ares_getsock(const struct ares_channeldata *channel,
                               ares_socket_t *socks,
                               int numsocks);
 
-CARES_EXTERN struct timeval *ares_timeout(ares_channel channel,
+CARES_EXTERN struct timeval *ares_timeout(const struct ares_channeldata *channel,
                                           struct timeval *maxtv,
                                           struct timeval *tv);
 
@@ -650,9 +650,9 @@ CARES_EXTERN int ares_set_servers_csv(ares_channel channel,
 CARES_EXTERN int ares_set_servers_ports_csv(ares_channel channel,
                                             const char* servers);
 
-CARES_EXTERN int ares_get_servers(ares_channel channel,
+CARES_EXTERN int ares_get_servers(const struct ares_channeldata *channel,
                                   struct ares_addr_node **servers);
-CARES_EXTERN int ares_get_servers_ports(ares_channel channel,
+CARES_EXTERN int ares_get_servers_ports(const struct ares_channeldata *channel,
                                         struct ares_addr_port_node **servers);
 
 CARES_EXTERN const char *ares_inet_ntop(int af, const void *src, char *dst,

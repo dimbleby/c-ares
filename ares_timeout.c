@@ -24,7 +24,7 @@
 #include "ares_private.h"
 
 /* return time offset between now and (future) check, in milliseconds */
-static long timeoffset(struct timeval *now, struct timeval *check)
+static long timeoffset(const struct timeval *now, const struct timeval *check)
 {
   return (check->tv_sec - now->tv_sec)*1000 +
          (check->tv_usec - now->tv_usec)/1000;
@@ -35,12 +35,12 @@ static long timeoffset(struct timeval *now, struct timeval *check)
  * once per second, rather than calling ares_timeout() to figure out
  * when to next call ares_process().
  */
-struct timeval *ares_timeout(ares_channel channel, struct timeval *maxtv,
+struct timeval *ares_timeout(const struct ares_channeldata *channel, struct timeval *maxtv,
                              struct timeval *tvbuf)
 {
-  struct query *query;
-  struct list_node* list_head;
-  struct list_node* list_node;
+  const struct query *query;
+  const struct list_node* list_head;
+  const struct list_node* list_node;
   struct timeval now;
   struct timeval nextstop;
   long offset, min_offset;
