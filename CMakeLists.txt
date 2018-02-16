@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED (VERSION 3.2.1)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.1.0)
 
 INCLUDE (CheckIncludeFiles)
 INCLUDE (CheckTypeSize)
@@ -10,6 +10,9 @@ INCLUDE (CheckLibraryExists)
 INCLUDE (GNUInstallDirs)
 
 PROJECT (c-ares C)
+
+# Set this version before release
+SET (CARES_VERSION "1.14.0")
 
 # This is for libtool compatibility, and specified in a form that is easily
 # translatable from libtool (even if the actual form doesn't make sense).
@@ -29,6 +32,7 @@ OPTION (CARES_STATIC     "Build as a static library"                            
 OPTION (CARES_SHARED     "Build as a shared library"                                             ON)
 OPTION (CARES_INSTALL    "Create installation targets (chain builders may want to disable this)" ON)
 OPTION (CARES_STATIC_PIC "Build the static library as PIC (position independent)"                OFF)
+OPTION (CARES_BUILD_TESTS "Build and run tests"                                                  OFF)
 
 # allow linking against the static runtime library in msvc
 IF (MSVC)
@@ -626,6 +630,10 @@ IF (CARES_STATIC)
 	ENDIF ()
 ENDIF ()
 
+IF (CARES_BUILD_TESTS)
+	ENABLE_TESTING ()
+	ADD_SUBDIRECTORY (test)
+ENDIF ()
 
 # Headers installation target
 IF (CARES_INSTALL)
@@ -644,6 +652,16 @@ IF (CARES_INSTALL)
 	)
 	INSTALL (EXPORT ${PROJECT_NAME}-targets DESTINATION ${CMAKECONFIG_INSTALL_DIR} NAMESPACE ${PROJECT_NAME}::)
 	INSTALL (FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake" DESTINATION ${CMAKECONFIG_INSTALL_DIR})
+
+	# pkgconfig support
+	IF (NOT CARES_SHARED)
+		SET (CPPFLAG_CARES_STATICLIB "-DCARES_STATICLIB")
+		FOREACH (LIB ${CARES_DEPENDENT_LIBS})
+			SET (CARES_PRIVATE_LIBS "${CARES_PRIVATE_LIBS} -l${LIB}")
+		ENDFOREACH ()
+	ENDIF ()
+	CONFIGURE_FILE("libcares.pc.cmake" "libcares.pc" @ONLY)
+	INSTALL (FILES "${CMAKE_CURRENT_BINARY_DIR}/libcares.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 ENDIF ()
 
 # Legacy chain-building variables (provided for compatibility with old code).
