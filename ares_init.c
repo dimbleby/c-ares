@@ -299,7 +299,7 @@ int ares_dup(ares_channel *dest, const struct ares_channeldata *src)
   (*dest)->sock_func_cb_data   = src->sock_func_cb_data;
 
   strncpy((*dest)->local_dev_name, src->local_dev_name,
-          sizeof(src->local_dev_name));
+          sizeof((*dest)->local_dev_name));
   (*dest)->local_ip4 = src->local_ip4;
   memcpy((*dest)->local_ip6, src->local_ip6, sizeof(src->local_ip6));
 
@@ -1180,7 +1180,7 @@ static int get_DNS_AdaptersAddresses(char **outptr)
         /* Allocate room for another address, if necessary, else skip. */
         if(addressesIndex == addressesSize) {
           const size_t newSize = addressesSize + 4;
-          Address * const newMem = 
+          Address * const newMem =
             (Address*)ares_realloc(addresses, sizeof(Address) * newSize);
           if(newMem == NULL) {
             continue;
@@ -1237,7 +1237,7 @@ static int get_DNS_AdaptersAddresses(char **outptr)
           /* Save the address as the next element in addresses. */
           addresses[addressesIndex].metric =
             getBestRouteMetric(&ipaaEntry->Luid,
-                               (SOCKADDR_INET*)(namesrvr.sa), 
+                               (SOCKADDR_INET*)(namesrvr.sa),
                                ipaaEntry->Ipv6Metric);
         }
         else
@@ -1287,7 +1287,7 @@ static int get_DNS_AdaptersAddresses(char **outptr)
 
 done:
   ares_free(addresses);
-  
+
   if (ipaa)
     ares_free(ipaa);
 
@@ -1380,6 +1380,21 @@ static size_t next_suffix(const char** list, const size_t advance)
   return end - beg;
 }
 
+/* Appends suffixes from 'tail' to 'searchlist' if not contains yet.
+ * Arguments are comma separated lists of domain suffixes. */
+static void append_suffixes(char** searchlist, const char* const tail)
+{
+  const char *suffix = tail;
+  size_t len = 0;
+  if (!tail || !*tail)
+    return;
+  while (len = next_suffix(&suffix, len))
+  {
+    if (!*searchlist || !contains_suffix(*searchlist, suffix, len))
+      commanjoin(searchlist, suffix, len);
+  }
+}
+
 /*
  * get_SuffixList_Windows()
  *
@@ -1391,7 +1406,7 @@ static size_t next_suffix(const char** list, const size_t advance)
  *
  * Returns 1 and sets *outptr when returning a dynamically allocated string.
  *
- * Implementation supports Windows Server 2003 and newer 
+ * Implementation supports Windows Server 2003 and newer
  */
 static int get_SuffixList_Windows(char **outptr)
 {
@@ -1400,8 +1415,6 @@ static int get_SuffixList_Windows(char **outptr)
   DWORD keyNameBuffSize;
   DWORD keyIdx = 0;
   char *p = NULL;
-  const char *pp;
-  size_t len = 0;
 
   *outptr = NULL;
 
@@ -1412,11 +1425,26 @@ static int get_SuffixList_Windows(char **outptr)
   if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_NS_NT_KEY, 0,
       KEY_READ, &hKey) == ERROR_SUCCESS)
   {
-    if (get_REG_SZ(hKey, SEARCHLIST_KEY, outptr))
-      replace_comma_by_space(*outptr);
+    get_REG_SZ(hKey, SEARCHLIST_KEY, outptr);
+    if (get_REG_SZ(hKey, DOMAIN_KEY, &p))
+    {
+      append_suffixes(outptr, p);
+      ares_free(p);
+      p = NULL;
+    }
     RegCloseKey(hKey);
-    if (*outptr)
-      return 1;
+  }
+
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_NT_DNSCLIENT, 0,
+      KEY_READ, &hKey) == ERROR_SUCCESS)
+  {
+    if (get_REG_SZ(hKey, SEARCHLIST_KEY, &p))
+    {
+      append_suffixes(outptr, p);
+      ares_free(p);
+      p = NULL;
+    }
+    RegCloseKey(hKey);
   }
 
   /* 2. Connection Specific Search List composed of:
@@ -1424,45 +1452,56 @@ static int get_SuffixList_Windows(char **outptr)
   if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_DNSCLIENT, 0,
       KEY_READ, &hKey) == ERROR_SUCCESS)
   {
-    get_REG_SZ(hKey, PRIMARYDNSSUFFIX_KEY, outptr);
-    RegCloseKey(hKey);
-  }
-  if (!*outptr)
-    return 0;
-
-  /*  b. Interface SearchList, Domain, DhcpDomain */
-  if (!RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_NS_NT_KEY "\\" INTERFACES_KEY, 0,
-      KEY_READ, &hKey) == ERROR_SUCCESS)
-    return 0;
-  for(;;)
-  {
-    keyNameBuffSize = sizeof(keyName);
-    if (RegEnumKeyExA(hKey, keyIdx++, keyName, &keyNameBuffSize,
-        0, NULL, NULL, NULL)
-        != ERROR_SUCCESS)
-      break;
-    if (RegOpenKeyExA(hKey, keyName, 0, KEY_QUERY_VALUE, &hKeyEnum)
-        != ERROR_SUCCESS)
-      continue;
-    if (get_REG_SZ(hKeyEnum, SEARCHLIST_KEY, &p) ||
-        get_REG_SZ(hKeyEnum, DOMAIN_KEY, &p) ||
-        get_REG_SZ(hKeyEnum, DHCPDOMAIN_KEY, &p))
+    if (get_REG_SZ(hKey, PRIMARYDNSSUFFIX_KEY, &p))
     {
-      /* p can be comma separated (SearchList) */
-      pp = p;
-      while ((len = next_suffix(&pp, len)) != 0)
-      {
-        if (!contains_suffix(*outptr, pp, len))
-          commanjoin(outptr, pp, len);
-      }
+      append_suffixes(outptr, p);
       ares_free(p);
       p = NULL;
     }
-    RegCloseKey(hKeyEnum);
+    RegCloseKey(hKey);
   }
-  RegCloseKey(hKey);
+
+  /*  b. Interface SearchList, Domain, DhcpDomain */
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, WIN_NS_NT_KEY "\\" INTERFACES_KEY, 0,
+      KEY_READ, &hKey) == ERROR_SUCCESS)
+  {
+    for(;;)
+    {
+      keyNameBuffSize = sizeof(keyName);
+      if (RegEnumKeyExA(hKey, keyIdx++, keyName, &keyNameBuffSize,
+          0, NULL, NULL, NULL)
+          != ERROR_SUCCESS)
+        break;
+      if (RegOpenKeyExA(hKey, keyName, 0, KEY_QUERY_VALUE, &hKeyEnum)
+          != ERROR_SUCCESS)
+        continue;
+      /* p can be comma separated (SearchList) */
+      if (get_REG_SZ(hKeyEnum, SEARCHLIST_KEY, &p))
+      {
+        append_suffixes(outptr, p);
+        ares_free(p);
+        p = NULL;
+      }
+      if (get_REG_SZ(hKeyEnum, DOMAIN_KEY, &p))
+      {
+        append_suffixes(outptr, p);
+        ares_free(p);
+        p = NULL;
+      }
+      if (get_REG_SZ(hKeyEnum, DHCPDOMAIN_KEY, &p))
+      {
+        append_suffixes(outptr, p);
+        ares_free(p);
+        p = NULL;
+      }
+      RegCloseKey(hKeyEnum);
+    }
+    RegCloseKey(hKey);
+  }
+
   if (*outptr)
     replace_comma_by_space(*outptr);
+
   return *outptr != NULL;
 }
 
