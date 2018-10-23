@@ -169,6 +169,7 @@ int ares_init_options(ares_channel *channelptr, struct ares_options *options,
   channel->sock_config_cb_data = NULL;
   channel->sock_funcs = NULL;
   channel->sock_func_cb_data = NULL;
+  channel->resolvconf_path = NULL;
 
   channel->last_server = 0;
   channel->last_timeout_processed = (time_t)now.tv_sec;
@@ -242,6 +243,8 @@ done:
         ares_free(channel->sortlist);
       if(channel->lookups)
         ares_free(channel->lookups);
+      if(channel->resolvconf_path)
+        ares_free(channel->resolvconf_path);
       ares_free(channel);
       return status;
     }
@@ -350,6 +353,9 @@ int ares_save_options(const struct ares_channeldata *channel, struct ares_option
                 ARES_OPT_SORTLIST|ARES_OPT_TIMEOUTMS);
   (*optmask) |= (channel->rotate ? ARES_OPT_ROTATE : ARES_OPT_NOROTATE);
 
+  if (channel->resolvconf_path)
+    (*optmask) |= ARES_OPT_RESOLVCONF;
+
   /* Copy easy stuff */
   options->flags   = channel->flags;
 
@@ -421,6 +427,13 @@ int ares_save_options(const struct ares_channeldata *channel, struct ares_option
       options->sortlist[i] = channel->sortlist[i];
   }
   options->nsort = channel->nsort;
+
+  /* copy path for resolv.conf file */
+  if (channel->resolvconf_path) {
+    options->resolvconf_path = ares_strdup(channel->resolvconf_path);
+    if (!options->resolvconf_path)
+      return ARES_ENOMEM;
+  }
 
   return ARES_SUCCESS;
 }
@@ -529,6 +542,14 @@ static int init_by_options(ares_channel channel,
     }
     channel->nsort = options->nsort;
   }
+
+  /* Set path for resolv.conf file, if given. */
+  if ((optmask & ARES_OPT_RESOLVCONF) && !channel->resolvconf_path)
+    {
+      channel->resolvconf_path = ares_strdup(options->resolvconf_path);
+      if (!channel->resolvconf_path && options->resolvconf_path)
+        return ARES_ENOMEM;
+    }
 
   channel->optmask = optmask;
 
@@ -1644,6 +1665,7 @@ static int init_by_resolv_conf(ares_channel channel)
     size_t linesize;
     int error;
     int update_domains;
+    const char *resolvconf_path;
 
     /* Don't read resolv.conf and friends if we don't have to */
     if (ARES_CONFIG_CHECK(channel))
@@ -1652,7 +1674,14 @@ static int init_by_resolv_conf(ares_channel channel)
     /* Only update search domains if they're not already specified */
     update_domains = (channel->ndomains == -1);
 
-    fp = fopen(PATH_RESOLV_CONF, "r");
+    /* Support path for resolvconf filename set by ares_init_options */
+    if(channel->resolvconf_path) {
+      resolvconf_path = channel->resolvconf_path;
+    } else {
+      resolvconf_path = PATH_RESOLV_CONF;
+    }
+
+    fp = fopen(resolvconf_path, "r");
     if (fp) {
       while ((status = ares__read_line(fp, &line, &linesize)) == ARES_SUCCESS)
       {
@@ -1663,10 +1692,10 @@ static int init_by_resolv_conf(ares_channel channel)
         else if ((p = try_config(line, "search", ';')) && update_domains)
           status = set_search(channel, p);
         else if ((p = try_config(line, "nameserver", ';')) &&
-                 channel->nservers == -1)
+                channel->nservers == -1)
           status = config_nameserver(&servers, &nservers, p);
         else if ((p = try_config(line, "sortlist", ';')) &&
-                 channel->nsort == -1)
+                channel->nsort == -1)
           status = config_sortlist(&sortlist, &nsort, p);
         else if ((p = try_config(line, "options", ';')))
           status = set_options(channel, p);
@@ -1686,7 +1715,7 @@ static int init_by_resolv_conf(ares_channel channel)
         break;
       default:
         DEBUGF(fprintf(stderr, "fopen() failed with error: %d %s\n",
-                       error, strerror(error)));
+                      error, strerror(error)));
         DEBUGF(fprintf(stderr, "Error opening file: %s\n", PATH_RESOLV_CONF));
         status = ARES_EFILE;
       }
@@ -1953,6 +1982,11 @@ static int init_by_defaults(ares_channel channel)
     if(channel->lookups) {
       ares_free(channel->lookups);
       channel->lookups = NULL;
+    }
+
+    if(channel->resolvconf_path) {
+      ares_free(channel->resolvconf_path);
+      channel->resolvconf_path = NULL;
     }
   }
 

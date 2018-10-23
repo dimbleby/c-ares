@@ -325,7 +325,13 @@ struct ares_channeldata {
 
   const struct ares_socket_functions * sock_funcs;
   void *sock_func_cb_data;
+
+  /* Path for resolv.conf file, configurable via ares_options */
+  char *resolvconf_path;
 };
+
+/* Does the domain end in ".onion" or ".onion."? Case-insensitive. */
+int ares__is_onion_domain(const char *name);
 
 /* Memory management functions */
 extern void *(*ares_malloc)(size_t size);

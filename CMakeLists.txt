@@ -12,7 +12,7 @@ INCLUDE (GNUInstallDirs)
 PROJECT (c-ares C)
 
 # Set this version before release
-SET (CARES_VERSION "1.14.0")
+SET (CARES_VERSION "1.15.0")
 
 # This is for libtool compatibility, and specified in a form that is easily
 # translatable from libtool (even if the actual form doesn't make sense).
@@ -25,7 +25,7 @@ SET (CARES_VERSION "1.14.0")
 # For example, a version of 4:0:2 would generate output such as:
 #    libname.so   -> libname.so.2
 #    libname.so.2 -> libname.so.2.2.0
-SET (CARES_LIB_VERSIONINFO "4:0:2")
+SET (CARES_LIB_VERSIONINFO "5:0:3")
 
 
 OPTION (CARES_STATIC     "Build as a static library"                                             OFF)
@@ -183,7 +183,7 @@ ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "SunOS")
 	LIST (APPEND SYSFLAGS -D__EXTENSIONS__ -D_REENTRANT -D_XOPEN_SOURCE=600)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "AIX")
-	LIST (APPEND SYSFLAGS -D_ALL_SOURCE -D_XOPEN_SOURCE=600)
+	LIST (APPEND SYSFLAGS -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_USE_IRS)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 	# Don't define _XOPEN_SOURCE on FreeBSD, it actually reduces visibility instead of increasing it
 ELSEIF (WIN32)
