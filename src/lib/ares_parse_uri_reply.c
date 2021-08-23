@@ -34,43 +34,51 @@
 #include "ares_data.h"
 #include "ares_private.h"
 
+/* AIX portability check */
+#ifndef T_URI
+#  define T_URI 256 /* uri selection */
+#endif
+
 int
-ares_parse_srv_reply (const unsigned char *abuf, int alen,
-                      struct ares_srv_reply **srv_out)
+ares_parse_uri_reply (const unsigned char *abuf, int alen,
+                      struct ares_uri_reply **uri_out)
 {
   unsigned int qdcount, ancount, i;
   const unsigned char *aptr, *vptr;
-  int status, rr_type, rr_class, rr_len;
+  int status, rr_type, rr_class, rr_len, rr_ttl;
   long len;
-  char *hostname = NULL, *rr_name = NULL;
-  struct ares_srv_reply *srv_head = NULL;
-  struct ares_srv_reply *srv_last = NULL;
-  struct ares_srv_reply *srv_curr;
+  char *uri_str = NULL, *rr_name = NULL;
+  struct ares_uri_reply *uri_head = NULL;
+  struct ares_uri_reply *uri_last = NULL;
+  struct ares_uri_reply *uri_curr;
 
-  /* Set *srv_out to NULL for all failure cases. */
-  *srv_out = NULL;
+  /* Set *uri_out to NULL for all failure cases. */
+  *uri_out = NULL;
 
   /* Give up if abuf doesn't have room for a header. */
-  if (alen < HFIXEDSZ)
-    return ARES_EBADRESP;
+  if (alen < HFIXEDSZ){
+	  return ARES_EBADRESP;
+  }
 
   /* Fetch the question and answer count from the header. */
   qdcount = DNS_HEADER_QDCOUNT (abuf);
   ancount = DNS_HEADER_ANCOUNT (abuf);
-  if (qdcount != 1)
-    return ARES_EBADRESP;
-  if (ancount == 0)
-    return ARES_ENODATA;
-
+  if (qdcount != 1) {
+      return ARES_EBADRESP;
+  }
+  if (ancount == 0) {
+	  return ARES_ENODATA;
+  }
   /* Expand the name from the question, and skip past the question. */
   aptr = abuf + HFIXEDSZ;
-  status = ares_expand_name (aptr, abuf, alen, &hostname, &len);
-  if (status != ARES_SUCCESS)
-    return status;
 
+  status = ares_expand_name (aptr, abuf, alen, &uri_str, &len);
+  if (status != ARES_SUCCESS){
+	  return status;
+  }
   if (aptr + len + QFIXEDSZ > abuf + alen)
     {
-      ares_free (hostname);
+      ares_free (uri_str);
       return ARES_EBADRESP;
     }
   aptr += len + QFIXEDSZ;
@@ -90,52 +98,60 @@ ares_parse_srv_reply (const unsigned char *abuf, int alen,
           status = ARES_EBADRESP;
           break;
         }
-      rr_type = DNS_RR_TYPE (aptr);
-      rr_class = DNS_RR_CLASS (aptr);
-      rr_len = DNS_RR_LEN (aptr);
+
+      rr_type 	= DNS_RR_TYPE (aptr);
+      rr_class 	= DNS_RR_CLASS (aptr);
+      rr_ttl 	= DNS_RR_TTL(aptr);
+      rr_len 	= DNS_RR_LEN (aptr);
       aptr += RRFIXEDSZ;
+
       if (aptr + rr_len > abuf + alen)
         {
           status = ARES_EBADRESP;
           break;
         }
 
-      /* Check if we are really looking at a SRV record */
-      if (rr_class == C_IN && rr_type == T_SRV)
+      /* Check if we are really looking at a URI record */
+      if (rr_class == C_IN && rr_type == T_URI)
         {
-          /* parse the SRV record itself */
-          if (rr_len < 6)
+          /* parse the URI record itself */
+          if (rr_len < 5)
             {
               status = ARES_EBADRESP;
               break;
             }
-
-          /* Allocate storage for this SRV answer appending it to the list */
-          srv_curr = ares_malloc_data(ARES_DATATYPE_SRV_REPLY);
-          if (!srv_curr)
+          /* Allocate storage for this URI answer appending it to the list */
+          uri_curr = ares_malloc_data(ARES_DATATYPE_URI_REPLY);
+          if (!uri_curr)
             {
               status = ARES_ENOMEM;
               break;
             }
-          if (srv_last)
+          if (uri_last)
             {
-              srv_last->next = srv_curr;
+              uri_last->next = uri_curr;
             }
           else
             {
-              srv_head = srv_curr;
+              uri_head = uri_curr;
             }
-          srv_last = srv_curr;
+          uri_last = uri_curr;
 
           vptr = aptr;
-          srv_curr->priority = DNS__16BIT(vptr);
+          uri_curr->priority = DNS__16BIT(vptr);
           vptr += sizeof(unsigned short);
-          srv_curr->weight = DNS__16BIT(vptr);
+          uri_curr->weight = DNS__16BIT(vptr);
           vptr += sizeof(unsigned short);
-          srv_curr->port = DNS__16BIT(vptr);
-          vptr += sizeof(unsigned short);
+          uri_curr->uri = (char *)ares_malloc(rr_len-3);
+	  	  if (!uri_curr->uri)
+	      	{
+	      	  status = ARES_ENOMEM;
+			  break;
+		    }
+          uri_curr->uri = strncpy(uri_curr->uri, vptr, rr_len-4);
+          uri_curr->uri[rr_len-4]='\0';
+          uri_curr->ttl = rr_ttl;
 
-          status = ares_expand_name (vptr, abuf, alen, &srv_curr->host, &len);
           if (status != ARES_SUCCESS)
             break;
         }
@@ -148,21 +164,21 @@ ares_parse_srv_reply (const unsigned char *abuf, int alen,
       aptr += rr_len;
     }
 
-  if (hostname)
-    ares_free (hostname);
+  if (uri_str)
+    ares_free (uri_str);
   if (rr_name)
     ares_free (rr_name);
 
   /* clean up on error */
   if (status != ARES_SUCCESS)
     {
-      if (srv_head)
-        ares_free_data (srv_head);
+      if (uri_head)
+        ares_free_data (uri_head);
       return status;
     }
 
   /* everything looks fine, return the data */
-  *srv_out = srv_head;
+  *uri_out = uri_head;
 
   return ARES_SUCCESS;
 }
