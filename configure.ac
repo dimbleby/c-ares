@@ -1,9 +1,9 @@
 AC_PREREQ([2.60])
 
-AC_INIT([c-ares], [1.18.0],
+AC_INIT([c-ares], [1.18.1],
   [c-ares mailing list: http://lists.haxx.se/listinfo/c-ares])
 
-CARES_VERSION_INFO="7:0:5"
+CARES_VERSION_INFO="7:1:5"
 dnl This flag accepts an argument of the form current[:revision[:age]]. So,
 dnl passing -version-info 3:12:1 sets current to 3, revision to 12, and age to
 dnl 1.
@@ -403,6 +403,11 @@ if test "$ac_cv_lib_resolve_strcasecmp" = "$ac_cv_func_strcasecmp"; then
                -lnsl)
 fi
 ac_cv_func_strcasecmp="no"
+
+dnl Windows builds require linking to iphlpapi
+if test "$ac_cv_header_winsock2_h" = "yes"; then
+  LIBS="$LIBS -liphlpapi"
+fi
 
 CARES_CHECK_LIBS_CONNECT
 
