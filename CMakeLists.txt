@@ -82,9 +82,14 @@ SET (TARGETS_INST_DEST
 
 # Function in Library
 # CHECK_LIBRARY_EXISTS can't be used as it will return true if the function
-# is found in a different dependent library.
+# is found in a different required/dependent library.
 MACRO (CARES_FUNCTION_IN_LIBRARY func lib var)
+
+	SET (_ORIG_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
+	SET (CMAKE_REQUIRED_LIBRARIES )
 	CHECK_FUNCTION_EXISTS ("${func}" "_CARES_FUNC_IN_LIB_GLOBAL_${func}")
+	SET (CMAKE_REQUIRED_LIBRARIES "${_ORIG_CMAKE_REQUIRED_LIBRARIES}")
+
 	IF ("${_CARES_FUNC_IN_LIB_GLOBAL_${func}}")
 		SET (${var} FALSE)
 	ELSE ()
@@ -689,6 +694,12 @@ IF (CARES_INSTALL)
     if( ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" )
 
         if ( "${CPACK_PACKAGE_ARCHITECTURE}" STREQUAL "" )
+            set( CPACK_PACKAGE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}" )
+        endif()
+        if ( "${CPACK_PACKAGE_ARCHITECTURE}" STREQUAL "" )
+            if ( "${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows" )
+                message( FATAL_ERROR "Failed to determine CPACK_PACKAGE_ARCHITECTURE. Is CMAKE_SYSTEM_PROCESSOR set?" )
+            endif()
             # Note: the architecture should default to the local architecture, but it
             # in fact comes up empty.  We call `uname -m` to ask the kernel instead.
             EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE CPACK_PACKAGE_ARCHITECTURE )

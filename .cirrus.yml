@@ -1,5 +1,6 @@
 env:
   CIRRUS_CLONE_DEPTH: 1
+  CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=DEBUG -DCARES_STATIC=ON -DCARES_STATIC_PIC=ON -DCARES_BUILD_TESTS=ON"
 
 task:
   matrix:
@@ -9,6 +10,12 @@ task:
         LC_ALL: "C"
         SCAN_BUILD: "scan-build"
         MAKE: "make"
+        BUILD_ASAN: "yes"
+        BUILD_UBSAN: "yes"
+        BUILD_LSAN: "yes"
+        BUILD_VALGRIND: "yes"
+        BUILD_COVERAGE: "yes"
+        BUILD_ANALYZE: "yes"
       container:
         image: debian:latest
     - name: "Debian arm64"
@@ -17,6 +24,10 @@ task:
         LC_ALL: "C"
         SCAN_BUILD: "scan-build"
         MAKE: "make"
+        BUILD_ASAN: "yes"
+        BUILD_UBSAN: "yes"
+        BUILD_LSAN: "yes"
+        BUILD_ANALYZE: "yes"
       arm_container:
         image: debian:latest
     - name: "FreeBSD amd64"
@@ -24,13 +35,25 @@ task:
         DIST: "FREEBSD"
         SCAN_BUILD: "scan-build"
         MAKE: "gmake"
+        BUILD_ANALYZE: "yes"
       freebsd_instance:
-        image_family: freebsd-13-0
+        image_family: freebsd-13-1
     - name: "MacOS"
       env:
         DIST: "MACOS"
         SCAN_BUILD: "/usr/local/opt/llvm/bin/scan-build"
         MAKE: "make"
+        BUILD_ASAN: "yes"
+        BUILD_ANALYZE: "yes"
+      macos_instance:
+        image: big-sur-xcode
+    - name: "iOS"
+      env:
+        DIST: "iOS"
+        MAKE: "make"
+        CMAKE_FLAGS: "-DCMAKE_BUILD_TYPE=DEBUG -DCARES_STATIC=ON -DCARES_STATIC_PIC=ON -DCARES_BUILD_TESTS=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=10.0 -DCMAKE_OSX_ARCHITECTURES=armv7;armv7s;arm64"
+        CFLAGS: "-arch armv7 -arch armv7s -arch arm64 -miphoneos-version-min=10.0"
+        CONFIG_OPTS: "--host=arm-apple-darwin10 --disable-tests"
       macos_instance:
         image: big-sur-xcode
   matrix:
@@ -42,34 +65,68 @@ task:
         BUILD_TYPE: "autotools"
     - name: "ASAN"
       # FreeBSD just hangs trying to run tests, think it may be trying to run leak sanitizer
-      only_if: $DIST != 'FREEBSD'
+      only_if: $BUILD_ASAN == 'yes'
       env:
         BUILD_TYPE: "asan"
+        CC: "clang"
         CONFIG_OPTS: "--enable-debug"
         CFLAGS: "-fsanitize=address"
         CXXFLAGS: "-fsanitize=address"
-        LDFLAGS: "-fsanitize=address"
+        LDFLAGS: "-fsanitize=address -lpthread"
+    - name: "UBSAN"
+      # FreeBSD just hangs trying to run tests, think it may be trying to run leak sanitizer
+      only_if: $BUILD_UBSAN == 'yes'
+      env:
+        BUILD_TYPE: "ubsan"
+        CC: "clang"
+        CONFIG_OPTS: "--enable-debug"
+        CFLAGS: "-fsanitize=undefined -fno-sanitize-recover"
+        CXXFLAGS: "-fsanitize=undefined -fno-sanitize-recover"
+        LDFLAGS: "-fsanitize=undefined -lpthread"
+    - name: "LSAN"
+      # lsan only works on debian x86/x64
+      only_if: $BUILD_LSAN == 'yes'
+      env:
+        BUILD_TYPE: "lsan"
+        CC: "clang"
+        CONFIG_OPTS: "--enable-debug"
+        CFLAGS: "-fsanitize=leak"
+        CXXFLAGS: "-fsanitize=leak"
+        LDFLAGS: "-fsanitize=leak -lpthread"
     - name: "ANALYZE"
+      only_if: $BUILD_ANALYZE == 'yes'
       env:
         BUILD_TYPE: "analyze"
+        CC: "clang"
         SCAN_WRAP: "${SCAN_BUILD} -v --status-bugs"
         CONFIG_OPTS: "--enable-debug --disable-tests"
     - name: "VALGRIND"
       # FreeBSD just hangs trying to run tests, think it may be trying to run leak sanitizer
-      only_if: $DIST == 'DEBIAN'
+      only_if: $BUILD_VALGRIND == 'yes'
       env:
         BUILD_TYPE: "valgrind"
         TEST_WRAP: "valgrind --leak-check=full"
         TEST_FILTER: "--gtest_filter=-*Container*:-*LiveSearchANY*"
+    - name: "COVERAGE"
+      only_if: $BUILD_COVERAGE == 'yes'
+      env:
+        BUILD_TYPE: "coverage"
+        CI_NAME: "cirrus-ci"
+        CI_BUILD_NUMBER: "${CIRRUS_TASK_ID}"
+        CI_BUILD_URL: "https://cirrus-ci.com/task/${CIRRUS_TASK_ID}"
+        CI_BRANCH: "${CIRRUS_BRANCH}"
+        CI_PULL_REQUEST: "${CIRRUS_PR}"
+        COVERALLS_REPO_TOKEN: "ENCRYPTED[a46bc6ca908e9e74f102c686cde67cae21d3e792dff46a60e860d1179d9349e8eb5a529132d0effefebdb0dbc3f95810]"
+        CONFIG_OPTS: "--enable-debug --disable-shared --enable-code-coverage --enable-tests"
 
   install_script:
     - |
       case "${DIST}" in
         DEBIAN*)
           apt-get update && \
-          apt-get install -y cmake ninja-build autoconf automake libtool g++
+          apt-get install -y cmake ninja-build autoconf automake libtool g++ pip
           case "${BUILD_TYPE}" in
-            asan)
+            asan|lsan|ubsan)
               apt-get install -y clang
               ;;
             analyze)
@@ -78,13 +135,17 @@ task:
             valgrind)
               apt-get install -y valgrind
               ;;
+            coverage)
+              apt-get install -y lcov git
+              pip3 install --user cpp-coveralls
+              ;;
           esac
           ;;
         FREEBSD)
           # pkg upgrade -y && \
           pkg install -y cmake ninja
           case "${BUILD_TYPE}" in
-            asan|analyze)
+            asan|analyze|ubsan|lsan)
               pkg install -y llvm autoconf automake libtool gmake
               ;;
             autotools)
@@ -92,11 +153,11 @@ task:
               ;;
           esac
           ;;
-        MACOS)
+        MACOS|iOS)
           brew update && \
           brew install ninja cmake
           case "${BUILD_TYPE}" in
-            asan|analyze)
+            asan|ubsan|lsan|analyze)
               brew install llvm autoconf automake libtool make
               ;;
             autotools)
