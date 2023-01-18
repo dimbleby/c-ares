@@ -73,7 +73,7 @@ TEST_F(LibraryTest, Strsplit) {
     },
   };
   for(size_t i = 0; i < data.inputs.size(); i++) {
-    char **out = ares_strsplit(data.inputs.at(i).c_str(),
+    char **out = ares__strsplit(data.inputs.at(i).c_str(),
                                data.delimiters.at(i).c_str(), &n);
     if(data.expected.at(i).size() == 0) {
       EXPECT_EQ(out, nullptr);
@@ -84,7 +84,7 @@ TEST_F(LibraryTest, Strsplit) {
         EXPECT_STREQ(out[j], data.expected.at(i).at(j).c_str());
       }
     }
-    ares_strsplit_free(out, n);
+    ares__strsplit_free(out, n);
   }
 }
 #endif

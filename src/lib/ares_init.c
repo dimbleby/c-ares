@@ -233,7 +233,7 @@ done:
       if (channel->servers)
         ares_free(channel->servers);
       if (channel->ndomains != -1)
-        ares_strsplit_free(channel->domains, channel->ndomains);
+        ares__strsplit_free(channel->domains, channel->ndomains);
       if (channel->sortlist)
         ares_free(channel->sortlist);
       if(channel->lookups)
@@ -1913,6 +1913,8 @@ static int config_sortlist(struct apattern **sortlist, int *nsort,
       q = str;
       while (*q && *q != '/' && *q != ';' && !ISSPACE(*q))
         q++;
+      if (q-str >= 16)
+        return ARES_EBADSTR;
       memcpy(ipbuf, str, q-str);
       ipbuf[q-str] = '\0';
       /* Find the prefix */
@@ -1921,6 +1923,8 @@ static int config_sortlist(struct apattern **sortlist, int *nsort,
           const char *str2 = q+1;
           while (*q && *q != ';' && !ISSPACE(*q))
             q++;
+          if (q-str >= 32)
+            return ARES_EBADSTR;
           memcpy(ipbufpfx, str, q-str);
           ipbufpfx[q-str] = '\0';
           str = str2;
@@ -1995,12 +1999,12 @@ static int set_search(ares_channel channel, const char *str)
   if(channel->ndomains != -1) {
     /* LCOV_EXCL_START: all callers check ndomains == -1 */
     /* if we already have some domains present, free them first */
-    ares_strsplit_free(channel->domains, channel->ndomains);
+    ares__strsplit_free(channel->domains, channel->ndomains);
     channel->domains = NULL;
     channel->ndomains = -1;
   } /* LCOV_EXCL_STOP */
 
-  channel->domains  = ares_strsplit(str, ", ", &cnt);
+  channel->domains  = ares__strsplit(str, ", ", &cnt);
   channel->ndomains = (int)cnt;
   if (channel->domains == NULL || channel->ndomains == 0) {
     channel->domains  = NULL;
