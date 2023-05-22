@@ -5,6 +5,7 @@
 *.dll
 *.exe
 *.obj
+*.map
 .*.swp
 Debug
 Release
@@ -65,3 +66,4 @@ c-ares-config.cmake
 c-ares-config-version.cmake
 Makefile.inc.cmake
 cmake_install.cmake
+aminclude_static.am
