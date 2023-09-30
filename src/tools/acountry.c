@@ -15,7 +15,7 @@
  *
  * Ref: http://countries.nerd.dk/more.html
  *
- * Written by G. Vanem <gvanem@yahoo.no> 2006, 2007
+ * Copyright (C) G. Vanem <gvanem@yahoo.no>
  *
  * NB! This program may not be big-endian aware.
  *
@@ -30,6 +30,8 @@
  * M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ares_setup.h"
@@ -172,7 +174,7 @@ int main(int argc, char **argv)
         }
 
       buf = malloc(100);
-      sprintf(buf, nerd_fmt,
+      snprintf(buf, 100, nerd_fmt,
               (unsigned int)(addr.s_addr >> 24),
               (unsigned int)((addr.s_addr >> 16) & 255),
               (unsigned int)((addr.s_addr >> 8) & 255),
@@ -436,7 +438,7 @@ static const struct search_list country_list[] = {
        { 498, "md", "Moldova"                              },
        { 492, "mc", "Monaco"                               },
        { 496, "mn", "Mongolia"                             },
-       { 499, "me", "Montenegro"                           },  
+       { 499, "me", "Montenegro"                           },
        { 500, "ms", "Montserrat"                           },
        { 504, "ma", "Morocco"                              },
        { 508, "mz", "Mozambique"                           },

@@ -13,6 +13,8 @@
  * written prior permission.  M.I.T. makes no representations about the
  * suitability of this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 
@@ -89,6 +91,10 @@
 #      undef OLD_APP32_64BIT_OFF_T
 #    endif
 #  endif
+#endif
+
+#ifdef HAVE_SYS_RANDOM_H
+#include <sys/random.h>
 #endif
 
 #ifdef HAVE_SYS_SOCKET_H

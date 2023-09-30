@@ -13,6 +13,8 @@
  * M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 
@@ -153,7 +155,7 @@ int ares_set_servers(ares_channel channel,
   if (!channel)
     return ARES_ENODATA;
 
-  if (!ares__is_list_empty(&channel->all_queries))
+  if (ares__llist_len(channel->all_queries) != 0)
     return ARES_ENOTIMP;
 
   ares__destroy_servers_state(channel);
@@ -166,11 +168,12 @@ int ares_set_servers(ares_channel channel,
   if (num_srvrs > 0)
     {
       /* Allocate storage for servers state */
-      channel->servers = ares_malloc(num_srvrs * sizeof(struct server_state));
+      channel->servers = ares_malloc(num_srvrs * sizeof(*channel->servers));
       if (!channel->servers)
         {
           return ARES_ENOMEM;
         }
+      memset(channel->servers, 0, num_srvrs * sizeof(*channel->servers));
       channel->nservers = num_srvrs;
       /* Fill servers state address data */
       for (i = 0, srvr = servers; srvr; i++, srvr = srvr->next)
@@ -205,7 +208,7 @@ int ares_set_servers_ports(ares_channel channel,
   if (!channel)
     return ARES_ENODATA;
 
-  if (!ares__is_list_empty(&channel->all_queries))
+  if (ares__llist_len(channel->all_queries) != 0)
     return ARES_ENOTIMP;
 
   ares__destroy_servers_state(channel);
@@ -218,11 +221,12 @@ int ares_set_servers_ports(ares_channel channel,
   if (num_srvrs > 0)
     {
       /* Allocate storage for servers state */
-      channel->servers = ares_malloc(num_srvrs * sizeof(struct server_state));
+      channel->servers = ares_malloc(num_srvrs * sizeof(*channel->servers));
       if (!channel->servers)
         {
           return ARES_ENOMEM;
         }
+      memset(channel->servers, 0, num_srvrs * sizeof(*channel->servers));
       channel->nservers = num_srvrs;
       /* Fill servers state address data */
       for (i = 0, srvr = servers; srvr; i++, srvr = srvr->next)

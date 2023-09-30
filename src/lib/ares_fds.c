@@ -12,6 +12,8 @@
  * M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ares_setup.h"
@@ -27,7 +29,7 @@ int ares_fds(const struct ares_channeldata *channel, fd_set *read_fds, fd_set *w
   int i;
 
   /* Are there any active queries? */
-  int active_queries = !ares__is_list_empty(&(channel->all_queries));
+  size_t active_queries = ares__llist_len(channel->all_queries);
 
   nfds = 0;
   for (i = 0; i < channel->nservers; i++)

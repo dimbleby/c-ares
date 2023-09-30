@@ -14,6 +14,8 @@
  * M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ares_setup.h"
@@ -113,7 +115,7 @@ static int as_is_first(const struct host_query *hquery);
 static int as_is_only(const struct host_query* hquery);
 static int next_dns_lookup(struct host_query *hquery);
 
-struct ares_addrinfo_cname *ares__malloc_addrinfo_cname()
+static struct ares_addrinfo_cname *ares__malloc_addrinfo_cname(void)
 {
   struct ares_addrinfo_cname *cname = ares_malloc(sizeof(struct ares_addrinfo_cname));
   if (!cname)
@@ -160,7 +162,7 @@ void ares__addrinfo_cat_cnames(struct ares_addrinfo_cname **head,
   last->next = tail;
 }
 
-struct ares_addrinfo *ares__malloc_addrinfo()
+static struct ares_addrinfo *ares__malloc_addrinfo(void)
 {
   struct ares_addrinfo *ai = ares_malloc(sizeof(struct ares_addrinfo));
   if (!ai)
@@ -170,10 +172,10 @@ struct ares_addrinfo *ares__malloc_addrinfo()
   return ai;
 }
 
-struct ares_addrinfo_node *ares__malloc_addrinfo_node()
+static struct ares_addrinfo_node *ares__malloc_addrinfo_node(void)
 {
   struct ares_addrinfo_node *node =
-      ares_malloc(sizeof(struct ares_addrinfo_node));
+      ares_malloc(sizeof(*node));
   if (!node)
     return NULL;
 
@@ -825,7 +827,7 @@ static int as_is_first(const struct host_query* hquery)
   char* p;
   int ndots = 0;
   size_t nname = hquery->name?strlen(hquery->name):0;
-  for (p = hquery->name; *p; p++)
+  for (p = hquery->name; p && *p; p++)
     {
       if (*p == '.')
         {

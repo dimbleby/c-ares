@@ -11,6 +11,8 @@
  * M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
+ *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ares_setup.h"
@@ -196,10 +198,6 @@ int ares__readaddrinfo(FILE *fp,
                 }
             }
         }
-
-      if (status != ARES_SUCCESS)
-        /* Ignore line if invalid address string for the requested family. */
-        continue;
 
       if (want_cname)
         {
