@@ -1,17 +1,26 @@
-
-/* Copyright 1998 by the Massachusetts Institute of Technology.
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) 1998 Massachusetts Institute of Technology
+ * Copyright (c) The c-ares project and its contributors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -52,8 +61,9 @@ static unsigned short generate_unique_id(ares_channel channel)
   return (unsigned short)id;
 }
 
-void ares_query(ares_channel channel, const char *name, int dnsclass,
-                int type, ares_callback callback, void *arg)
+int ares_query_qid(ares_channel channel, const char *name,
+                   int dnsclass, int type, ares_callback callback,
+                   void *arg, unsigned short *qid)
 {
   struct qquery *qquery;
   unsigned char *qbuf;
@@ -68,7 +78,7 @@ void ares_query(ares_channel channel, const char *name, int dnsclass,
     {
       if (qbuf != NULL) ares_free(qbuf);
       callback(arg, status, 0, NULL, 0);
-      return;
+      return status;
     }
 
   /* Allocate and fill in the query structure. */
@@ -77,15 +87,27 @@ void ares_query(ares_channel channel, const char *name, int dnsclass,
     {
       ares_free_string(qbuf);
       callback(arg, ARES_ENOMEM, 0, NULL, 0);
-      return;
+      return ARES_ENOMEM;
     }
   qquery->callback = callback;
   qquery->arg = arg;
 
   /* Send it off.  qcallback will be called when we get an answer. */
-  ares_send(channel, qbuf, qlen, qcallback, qquery);
+  status = ares_send_ex(channel, qbuf, qlen, qcallback, qquery);
   ares_free_string(qbuf);
+
+  if (status == ARES_SUCCESS && qid)
+    *qid = id;
+
+  return status;
 }
+
+void ares_query(ares_channel channel, const char *name, int dnsclass,
+                int type, ares_callback callback, void *arg)
+{
+  ares_query_qid(channel, name, dnsclass, type, callback, arg, NULL);
+}
+
 
 static void qcallback(void *arg, int status, int timeouts, unsigned char *abuf, int alen)
 {

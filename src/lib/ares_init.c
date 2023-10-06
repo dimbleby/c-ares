@@ -1,18 +1,26 @@
-
-/* Copyright 1998 by the Massachusetts Institute of Technology.
- * Copyright (C) 2007-2013 by Daniel Stenberg
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) 1998 Massachusetts Institute of Technology
+ * Copyright (c) 2007 Daniel Stenberg
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -127,7 +135,6 @@ int ares_init_options(ares_channel *channelptr, struct ares_options *options,
                       int optmask)
 {
   ares_channel channel;
-  int i;
   int status = ARES_SUCCESS;
 
   if (ares_library_initialized() != ARES_SUCCESS)
@@ -189,6 +196,12 @@ int ares_init_options(ares_channel *channelptr, struct ares_options *options,
     goto done;
   }
 
+  channel->connnode_by_socket = ares__htable_asvp_create(NULL);
+  if (channel->connnode_by_socket == NULL) {
+    status = ARES_ENOMEM;
+    goto done;
+  }
+
   /* Initialize configuration by each of the four sources, from highest
    * precedence to lowest.
    */
@@ -234,9 +247,6 @@ done:
     {
       /* Something failed; clean up memory we may have allocated. */
       if (channel->servers) {
-        for (i = 0; i < channel->nservers; i++) {
-          ares__llist_destroy(channel->servers[i].queries_to_server);
-        }
         ares_free(channel->servers);
       }
       if (channel->ndomains != -1)
@@ -255,6 +265,7 @@ done:
       ares__htable_stvp_destroy(channel->queries_by_qid);
       ares__llist_destroy(channel->all_queries);
       ares__slist_destroy(channel->queries_by_timeout);
+      ares__htable_asvp_destroy(channel->connnode_by_socket);
       ares_free(channel);
       return status;
     }
@@ -450,6 +461,11 @@ int ares_save_options(const struct ares_channeldata *channel, struct ares_option
       return ARES_ENOMEM;
   }
 
+  if (channel->udp_max_queries > 0) {
+    (*optmask) |= ARES_OPT_UDP_MAX_QUERIES;
+    options->udp_max_queries = channel->udp_max_queries;
+  }
+
   return ARES_SUCCESS;
 }
 
@@ -574,6 +590,9 @@ static int init_by_options(ares_channel channel,
       if (!channel->hosts_path && options->hosts_path)
         return ARES_ENOMEM;
     }
+
+  if (optmask & ARES_OPT_UDP_MAX_QUERIES)
+    channel->udp_max_queries = options->udp_max_queries;
 
   channel->optmask = optmask;
 
@@ -2379,23 +2398,31 @@ int ares__init_servers_state(ares_channel channel)
   struct server_state *server;
   int i;
 
-  for (i = 0; i < channel->nservers; i++)
-    {
-      server = &channel->servers[i];
-      server->udp_socket = ARES_SOCKET_BAD;
-      server->tcp_socket = ARES_SOCKET_BAD;
-      server->tcp_connection_generation = ++channel->tcp_connection_generation;
-      server->tcp_lenbuf_pos = 0;
-      server->tcp_buffer_pos = 0;
-      server->tcp_buffer = NULL;
-      server->tcp_length = 0;
-      server->qhead = NULL;
-      server->qtail = NULL;
-      server->channel = channel;
-      server->is_broken = 0;
-      server->queries_to_server = ares__llist_create(NULL);
-      if (server->queries_to_server == NULL)
-        return ARES_ENOMEM;
+  for (i = 0; i < channel->nservers; i++) {
+    server = &channel->servers[i];
+
+    /* NOTE: Can't use memset() here because the server addresses have been
+     *       filled in already */
+    server->tcp_parser = ares__buf_create();
+    if (server->tcp_parser == NULL)
+      return ARES_ENOMEM;
+
+    server->tcp_send = ares__buf_create();
+    if (server->tcp_send == NULL) {
+      ares__buf_destroy(server->tcp_parser);
+      return ARES_ENOMEM;
     }
+
+    server->idx = i;
+    server->connections = ares__llist_create(NULL);
+    if (server->connections == NULL) {
+      ares__buf_destroy(server->tcp_parser);
+      ares__buf_destroy(server->tcp_send);
+      return ARES_ENOMEM;
+    }
+
+    server->tcp_connection_generation = ++channel->tcp_connection_generation;
+    server->channel = channel;
+  }
   return ARES_SUCCESS;
 }

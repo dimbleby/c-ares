@@ -1,16 +1,25 @@
-/* Copyright (C) 2023 by Brad House
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) 2023 Brad House
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -223,7 +232,7 @@ ares__slist_node_t *ares__slist_insert(ares__slist_t *list, void *val)
   if (list->levels < node->levels) {
     size_t zero_len = sizeof(*list->head) * (node->levels - list->levels);
     size_t offset   = sizeof(*list->head) * list->levels;
-    void  *ptr      = ares_realloc(list->head, sizeof(*list->head) * list->levels);
+    void  *ptr      = ares_realloc(list->head, sizeof(*list->head) * node->levels);
     if (ptr == NULL)
       goto fail;
 
@@ -236,7 +245,6 @@ ares__slist_node_t *ares__slist_insert(ares__slist_t *list, void *val)
   /* Scan from highest level in the slist, even if we're not using that number
    * of levels for this entry as this is what makes it O(log n) */
   for (i=list->levels; i-- > 0; ) {
-
     /* set left if left is NULL and the current node value is greater than the 
      * head at this level */
     if (left == NULL          && 

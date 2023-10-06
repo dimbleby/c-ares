@@ -1,18 +1,26 @@
-
-/* Copyright 1998 by the Massachusetts Institute of Technology.
- * Copyright (C) 2004-2011 by Daniel Stenberg
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) 1998 Massachusetts Institute of Technology
+ * Copyright (c) 2004 Daniel Stenberg
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -52,6 +60,7 @@ void ares_destroy(ares_channel channel)
   if (!channel)
     return;
 
+  /* Destroy all queries */
   node = ares__llist_node_first(channel->all_queries);
   while (node != NULL) {
     ares__llist_node_t *next  = ares__llist_node_next(node);
@@ -63,7 +72,8 @@ void ares_destroy(ares_channel channel)
 
     node = next;
   }
-  
+
+
 #ifndef NDEBUG
   /* Freeing the query should remove it from all the lists in which it sits,
    * so all query lists should be empty now.
@@ -75,6 +85,10 @@ void ares_destroy(ares_channel channel)
 
   ares__destroy_servers_state(channel);
 
+#ifndef NDEBUG
+  assert(ares__htable_asvp_num_keys(channel->connnode_by_socket) == 0);
+#endif
+
   if (channel->domains) {
     for (i = 0; i < channel->ndomains; i++)
       ares_free(channel->domains[i]);
@@ -84,6 +98,7 @@ void ares_destroy(ares_channel channel)
   ares__llist_destroy(channel->all_queries);
   ares__slist_destroy(channel->queries_by_timeout);
   ares__htable_stvp_destroy(channel->queries_by_qid);
+  ares__htable_asvp_destroy(channel->connnode_by_socket);
 
   if(channel->sortlist)
     ares_free(channel->sortlist);
@@ -113,9 +128,10 @@ void ares__destroy_servers_state(ares_channel channel)
       for (i = 0; i < channel->nservers; i++)
         {
           server = &channel->servers[i];
-          ares__close_sockets(channel, server);
-          assert(ares__llist_len(server->queries_to_server) == 0);
-          ares__llist_destroy(server->queries_to_server);
+          ares__close_sockets(server);
+          ares__llist_destroy(server->connections);
+          ares__buf_destroy(server->tcp_parser);
+          ares__buf_destroy(server->tcp_send);
         }
       ares_free(channel->servers);
       channel->servers = NULL;
