@@ -28,7 +28,7 @@
 #include "ares_setup.h"
 
 #ifdef HAVE_LIMITS_H
-#include <limits.h>
+#  include <limits.h>
 #endif
 
 #include "ares.h"
@@ -37,8 +37,8 @@
 /* return time offset between now and (future) check, in milliseconds */
 static long timeoffset(const struct timeval *now, const struct timeval *check)
 {
-  return (check->tv_sec - now->tv_sec)*1000 +
-         (check->tv_usec - now->tv_usec)/1000;
+  return (check->tv_sec - now->tv_sec) * 1000 +
+         (check->tv_usec - now->tv_usec) / 1000;
 }
 
 struct timeval *ares_timeout(const struct ares_channeldata *channel,
@@ -63,26 +63,32 @@ struct timeval *ares_timeout(const struct ares_channeldata *channel,
   now = ares__tvnow();
 
   offset = timeoffset(&now, &query->timeout);
-  if (offset < 0)
+  if (offset < 0) {
     offset = 0;
-  if (offset > (long)INT_MAX)
+  }
+  if (offset > (long)INT_MAX) {
     offset = INT_MAX;
+  }
 
-  tvbuf->tv_sec = offset / 1000;
+  tvbuf->tv_sec  = offset / 1000;
   tvbuf->tv_usec = (offset % 1000) * 1000;
 
-  if (maxtv == NULL)
+  if (maxtv == NULL) {
     return tvbuf;
+  }
 
   /* Return the minimum time between maxtv and tvbuf */
 
-  if (tvbuf->tv_sec > maxtv->tv_sec)
+  if (tvbuf->tv_sec > maxtv->tv_sec) {
     return maxtv;
-  if (tvbuf->tv_sec < maxtv->tv_sec)
+  }
+  if (tvbuf->tv_sec < maxtv->tv_sec) {
     return tvbuf;
+  }
 
-  if (tvbuf->tv_usec > maxtv->tv_usec)
+  if (tvbuf->tv_usec > maxtv->tv_usec) {
     return maxtv;
+  }
 
   return tvbuf;
 }
