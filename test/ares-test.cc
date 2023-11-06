@@ -78,7 +78,7 @@ std::vector<std::pair<int, bool>> families_modes = both_families_both_modes;
 unsigned long long LibraryTest::fails_ = 0;
 std::map<size_t, int> LibraryTest::size_fails_;
 
-void ProcessWork(ares_channel channel,
+void ProcessWork(ares_channel_t *channel,
                  std::function<std::set<int>()> get_extrafds,
                  std::function<void(int)> process_extra) {
   int nfds, count;
@@ -184,6 +184,10 @@ std::set<int> NoExtraFDs() {
 }
 
 void DefaultChannelTest::Process() {
+  ProcessWork(channel_, NoExtraFDs, nullptr);
+}
+
+void FileChannelTest::Process() {
   ProcessWork(channel_, NoExtraFDs, nullptr);
 }
 
@@ -725,7 +729,8 @@ void AddrInfoCallback(void *data, int status, int timeouts,
   result->done_ = true;
   result->status_ = status;
   result->timeouts_= timeouts;
-  result->ai_ = AddrInfo(ai);
+  if (ai)
+    result->ai_ = AddrInfo(ai);
   if (verbose) std::cerr << "AddrInfoCallback(" << *result << ")" << std::endl;
 }
 
@@ -774,7 +779,7 @@ void NameInfoCallback(void *data, int status, int timeouts,
   if (verbose) std::cerr << "NameInfoCallback(" << *result << ")" << std::endl;
 }
 
-std::vector<std::string> GetNameServers(ares_channel channel) {
+std::vector<std::string> GetNameServers(ares_channel_t *channel) {
   struct ares_addr_port_node* servers = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_get_servers_ports(channel, &servers));
   struct ares_addr_port_node* server = servers;
@@ -849,7 +854,7 @@ TempFile::TempFile(const std::string& contents)
 
 }
 
-VirtualizeIO::VirtualizeIO(ares_channel c)
+VirtualizeIO::VirtualizeIO(ares_channel_t *c)
   : channel_(c)
 {
   ares_set_socket_functions(channel_, &default_functions, 0);

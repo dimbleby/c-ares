@@ -30,19 +30,19 @@
 #include "ares.h"
 #include "ares_private.h"
 
-int ares_fds(const struct ares_channeldata *channel, fd_set *read_fds, fd_set *write_fds)
+int ares_fds(const ares_channel_t *channel, fd_set *read_fds, fd_set *write_fds)
 {
-  struct server_state *server;
-  ares_socket_t        nfds;
-  size_t               i;
+  ares_socket_t       nfds;
+  ares__slist_node_t *snode;
 
   /* Are there any active queries? */
-  size_t               active_queries = ares__llist_len(channel->all_queries);
+  size_t              active_queries = ares__llist_len(channel->all_queries);
 
   nfds = 0;
-  for (i = 0; i < channel->nservers; i++) {
-    ares__llist_node_t *node;
-    server = &channel->servers[i];
+  for (snode = ares__slist_node_first(channel->servers); snode != NULL;
+       snode = ares__slist_node_next(snode)) {
+    struct server_state *server = ares__slist_node_val(snode);
+    ares__llist_node_t  *node;
 
     for (node = ares__llist_node_first(server->connections); node != NULL;
          node = ares__llist_node_next(node)) {
@@ -64,5 +64,5 @@ int ares_fds(const struct ares_channeldata *channel, fd_set *read_fds, fd_set *w
     }
   }
 
-  return nfds;
+  return (int)nfds;
 }

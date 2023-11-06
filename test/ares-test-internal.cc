@@ -37,6 +37,7 @@ extern "C" {
 #include "ares_data.h"
 #include "ares_strsplit.h"
 #include "ares_private.h"
+#include "ares__htable.h"
 #include "bitncmp.h"
 
 #ifdef HAVE_ARPA_INET_H
@@ -340,66 +341,8 @@ TEST_F(LibraryTest, ReadLineNoBuf) {
   ares_free(buf);
 }
 
-TEST(Misc, GetHostent) {
-  TempFile hostsfile("1.2.3.4 example.com  \n"
-                     "  2.3.4.5\tgoogle.com   www.google.com\twww2.google.com\n"
-                     "#comment\n"
-                     "4.5.6.7\n"
-                     "1.3.5.7  \n"
-                     "::1    ipv6.com");
-  struct hostent *host = nullptr;
-  FILE *fp = fopen(hostsfile.filename(), "r");
-  ASSERT_NE(nullptr, fp);
-  EXPECT_EQ(ARES_EBADFAMILY, ares__get_hostent(fp, AF_INET+AF_INET6, &host));
-  rewind(fp);
 
-  EXPECT_EQ(ARES_SUCCESS, ares__get_hostent(fp, AF_INET, &host));
-  ASSERT_NE(nullptr, host);
-  std::stringstream ss1;
-  ss1 << HostEnt(host);
-  EXPECT_EQ("{'example.com' aliases=[] addrs=[1.2.3.4]}", ss1.str());
-  ares_free_hostent(host);
-  host = nullptr;
-
-  EXPECT_EQ(ARES_SUCCESS, ares__get_hostent(fp, AF_INET, &host));
-  ASSERT_NE(nullptr, host);
-  std::stringstream ss2;
-  ss2 << HostEnt(host);
-  EXPECT_EQ("{'google.com' aliases=[www.google.com, www2.google.com] addrs=[2.3.4.5]}", ss2.str());
-  ares_free_hostent(host);
-  host = nullptr;
-
-  EXPECT_EQ(ARES_EOF, ares__get_hostent(fp, AF_INET, &host));
-
-  rewind(fp);
-  EXPECT_EQ(ARES_SUCCESS, ares__get_hostent(fp, AF_INET6, &host));
-  ASSERT_NE(nullptr, host);
-  std::stringstream ss3;
-  ss3 << HostEnt(host);
-  EXPECT_EQ("{'ipv6.com' aliases=[] addrs=[0000:0000:0000:0000:0000:0000:0000:0001]}", ss3.str());
-  ares_free_hostent(host);
-  host = nullptr;
-  EXPECT_EQ(ARES_EOF, ares__get_hostent(fp, AF_INET6, &host));
-  fclose(fp);
-}
-
-TEST_F(LibraryTest, GetHostentAllocFail) {
-  TempFile hostsfile("1.2.3.4 example.com alias1 alias2\n");
-  struct hostent *host = nullptr;
-  FILE *fp = fopen(hostsfile.filename(), "r");
-  ASSERT_NE(nullptr, fp);
-
-  for (int ii = 1; ii <= 8; ii++) {
-    rewind(fp);
-    ClearFails();
-    SetAllocFail(ii);
-    host = nullptr;
-    EXPECT_EQ(ARES_ENOMEM, ares__get_hostent(fp, AF_INET, &host)) << ii;
-  }
-  fclose(fp);
-}
-
-TEST_F(DefaultChannelTest, GetAddrInfoHostsPositive) {
+TEST_F(FileChannelTest, GetAddrInfoHostsPositive) {
   TempFile hostsfile("1.2.3.4 example.com  \n"
                      "  2.3.4.5\tgoogle.com   www.google.com\twww2.google.com\n"
                      "#comment\n"
@@ -419,7 +362,7 @@ TEST_F(DefaultChannelTest, GetAddrInfoHostsPositive) {
   EXPECT_EQ("{example.com addr=[1.2.3.4]}", ss.str());
 }
 
-TEST_F(DefaultChannelTest, GetAddrInfoHostsSpaces) {
+TEST_F(FileChannelTest, GetAddrInfoHostsSpaces) {
   TempFile hostsfile("1.2.3.4 example.com  \n"
                      "  2.3.4.5\tgoogle.com   www.google.com\twww2.google.com\n"
                      "#comment\n"
@@ -439,7 +382,7 @@ TEST_F(DefaultChannelTest, GetAddrInfoHostsSpaces) {
   EXPECT_EQ("{www.google.com->google.com, www2.google.com->google.com addr=[2.3.4.5]}", ss.str());
 }
 
-TEST_F(DefaultChannelTest, GetAddrInfoHostsByALias) {
+TEST_F(FileChannelTest, GetAddrInfoHostsByALias) {
   TempFile hostsfile("1.2.3.4 example.com  \n"
                      "  2.3.4.5\tgoogle.com   www.google.com\twww2.google.com\n"
                      "#comment\n"
@@ -459,7 +402,7 @@ TEST_F(DefaultChannelTest, GetAddrInfoHostsByALias) {
   EXPECT_EQ("{www.google.com->google.com, www2.google.com->google.com addr=[2.3.4.5]}", ss.str());
 }
 
-TEST_F(DefaultChannelTest, GetAddrInfoHostsIPV6) {
+TEST_F(FileChannelTest, GetAddrInfoHostsIPV6) {
   TempFile hostsfile("1.2.3.4 example.com  \n"
                      "  2.3.4.5\tgoogle.com   www.google.com\twww2.google.com\n"
                      "#comment\n"
@@ -479,25 +422,34 @@ TEST_F(DefaultChannelTest, GetAddrInfoHostsIPV6) {
   EXPECT_EQ("{ipv6.com addr=[[0000:0000:0000:0000:0000:0000:0000:0001]]}", ss.str());
 }
 
-TEST_F(LibraryTest, GetAddrInfoAllocFail) {
+
+TEST_F(FileChannelTest, GetAddrInfoAllocFail) {
   TempFile hostsfile("1.2.3.4 example.com alias1 alias2\n");
+  EnvValue with_env("CARES_HOSTS", hostsfile.filename());
   struct ares_addrinfo_hints hints;
-  unsigned short port = 80;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
 
-  FILE *fp = fopen(hostsfile.filename(), "r");
-  ASSERT_NE(nullptr, fp);
-
-  for (int ii = 1; ii <= 3; ii++) {
-    rewind(fp);
+  // Fail a variety of different memory allocations, and confirm
+  // that the operation either fails with ENOMEM or succeeds
+  // with the expected result.
+  const int kCount = 34;
+  AddrInfoResult results[kCount];
+  for (int ii = 1; ii <= kCount; ii++) {
+    AddrInfoResult* result = &(results[ii - 1]);
     ClearFails();
     SetAllocFail(ii);
-    struct ares_addrinfo ai;
-    EXPECT_EQ(ARES_ENOMEM, ares__readaddrinfo(fp, "example.com", port, &hints, &ai)) << ii;
+    ares_getaddrinfo(channel_, "example.com", NULL, &hints, AddrInfoCallback, result);
+    Process();
+    EXPECT_TRUE(result->done_);
+    if (result->status_ == ARES_SUCCESS) {
+      std::stringstream ss;
+      ss << result->ai_;
+      EXPECT_EQ("{alias1->example.com, alias2->example.com addr=[1.2.3.4]}", ss.str()) << " failed alloc #" << ii;
+      if (verbose) std::cerr << "Succeeded despite failure of alloc #" << ii << std::endl;
+    }
   }
-  fclose(fp);
 }
 
 TEST(Misc, OnionDomain) {
@@ -526,6 +478,94 @@ TEST_F(LibraryTest, CatDomain) {
   EXPECT_STREQ("foo.example.net.", s);
   ares_free(s);
 }
+
+TEST_F(LibraryTest, BufMisuse) {
+  EXPECT_EQ(NULL, ares__buf_create_const(NULL, 0));
+  ares__buf_reclaim(NULL);
+  EXPECT_NE(ARES_SUCCESS, ares__buf_append(NULL, NULL, 0));
+  size_t len = 10;
+  EXPECT_EQ(NULL, ares__buf_append_start(NULL, &len));
+  EXPECT_EQ(NULL, ares__buf_append_start(NULL, NULL));
+  ares__buf_append_finish(NULL, 0);
+  EXPECT_EQ(NULL, ares__buf_finish_bin(NULL, NULL));
+  EXPECT_EQ(NULL, ares__buf_finish_str(NULL, NULL));
+  ares__buf_tag(NULL);
+  EXPECT_NE(ARES_SUCCESS, ares__buf_tag_rollback(NULL));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_tag_clear(NULL));
+  EXPECT_EQ(NULL, ares__buf_tag_fetch(NULL, NULL));
+  EXPECT_EQ(0, ares__buf_tag_length(NULL));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_tag_fetch_bytes(NULL, NULL, NULL));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_tag_fetch_string(NULL, NULL, 0));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_fetch_bytes_dup(NULL, 0, NULL));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_fetch_str_dup(NULL, 0, NULL));
+  EXPECT_EQ(0, ares__buf_consume_whitespace(NULL, ARES_FALSE));
+  EXPECT_EQ(0, ares__buf_consume_nonwhitespace(NULL));
+  EXPECT_EQ(0, ares__buf_consume_line(NULL, ARES_FALSE));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_begins_with(NULL, NULL, 0));
+  EXPECT_EQ(0, ares__buf_get_position(NULL));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_set_position(NULL, 0));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_parse_dns_name(NULL, NULL, ARES_FALSE));
+  EXPECT_NE(ARES_SUCCESS, ares__buf_parse_dns_binstr(NULL, 0, NULL, NULL, ARES_FALSE));
+}
+
+TEST_F(LibraryTest, HtableMisuse) {
+  EXPECT_EQ(NULL, ares__htable_create(NULL, NULL, NULL, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_insert(NULL, NULL));
+  EXPECT_EQ(NULL, ares__htable_get(NULL, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_remove(NULL, NULL));
+  EXPECT_EQ(0, ares__htable_num_keys(NULL));
+}
+
+TEST_F(LibraryTest, HtableAsvpMisuse) {
+  EXPECT_EQ(ARES_FALSE, ares__htable_asvp_insert(NULL, ARES_SOCKET_BAD, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_asvp_get(NULL, ARES_SOCKET_BAD, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_asvp_remove(NULL, ARES_SOCKET_BAD));
+  EXPECT_EQ(0, ares__htable_asvp_num_keys(NULL));
+}
+
+TEST_F(LibraryTest, HtableStrvpMisuse) {
+  EXPECT_EQ(ARES_FALSE, ares__htable_strvp_insert(NULL, NULL, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_strvp_get(NULL, NULL, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_strvp_remove(NULL, NULL));
+  EXPECT_EQ(0, ares__htable_strvp_num_keys(NULL));
+}
+
+TEST_F(LibraryTest, HtableSzvpMisuse) {
+  EXPECT_EQ(ARES_FALSE, ares__htable_szvp_insert(NULL, 0, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_szvp_get(NULL, 0, NULL));
+  EXPECT_EQ(ARES_FALSE, ares__htable_szvp_remove(NULL, 0));
+  EXPECT_EQ(0, ares__htable_szvp_num_keys(NULL));
+}
+
+TEST_F(LibraryTest, LlistMisuse) {
+  ares__llist_replace_destructor(NULL, NULL);
+  EXPECT_EQ(NULL, ares__llist_insert_before(NULL, NULL));
+  EXPECT_EQ(NULL, ares__llist_insert_after(NULL, NULL));
+  EXPECT_EQ(NULL, ares__llist_node_last(NULL));
+  EXPECT_EQ(NULL, ares__llist_node_next(NULL));
+  EXPECT_EQ(NULL, ares__llist_node_prev(NULL));
+  EXPECT_EQ(0, ares__llist_len(NULL));
+  EXPECT_EQ(NULL, ares__llist_node_parent(NULL));
+  EXPECT_EQ(NULL, ares__llist_node_claim(NULL));
+  ares__llist_node_replace(NULL, NULL);
+}
+
+TEST_F(LibraryTest, SlistMisuse) {
+  EXPECT_EQ(NULL, ares__slist_create(NULL, NULL, NULL));
+  ares__slist_replace_destructor(NULL, NULL);
+  EXPECT_EQ(NULL, ares__slist_insert(NULL, NULL));
+  EXPECT_EQ(NULL, ares__slist_node_find(NULL, NULL));
+  EXPECT_EQ(NULL, ares__slist_node_first(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_last(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_next(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_prev(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_val(NULL));
+  EXPECT_EQ(0, ares__slist_len(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_parent(NULL));
+  EXPECT_EQ(NULL, ares__slist_first_val(NULL));
+  EXPECT_EQ(NULL, ares__slist_last_val(NULL));
+  EXPECT_EQ(NULL, ares__slist_node_claim(NULL));
+}
 #endif
 
 #ifdef CARES_EXPOSE_STATICS
@@ -543,7 +583,7 @@ TEST_F(LibraryTest, Striendstr) {
   const char *str = "plugh";
   EXPECT_NE(nullptr, ares_striendstr(str, str));
 }
-extern "C" ares_status_t ares__single_domain(ares_channel, const char*, char**);
+
 TEST_F(DefaultChannelTest, SingleDomain) {
   TempFile aliases("www www.google.com\n");
   EnvValue with_env("HOSTALIASES", aliases.filename());
@@ -565,12 +605,12 @@ TEST_F(DefaultChannelTest, SingleDomain) {
 #endif
 
 TEST_F(DefaultChannelTest, SaveInvalidChannel) {
-  int saved = channel_->nservers;
-  channel_->nservers = 0;
+  ares__slist_t *saved = channel_->servers;
+  channel_->servers = NULL;
   struct ares_options opts;
   int optmask = 0;
   EXPECT_EQ(ARES_ENODATA, ares_save_options(channel_, &opts, &optmask));
-  channel_->nservers = saved;
+  channel_->servers = saved;
 }
 
 // Need to put this in own function due to nested lambda bug

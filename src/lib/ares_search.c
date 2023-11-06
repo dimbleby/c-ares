@@ -36,17 +36,17 @@
 
 struct search_query {
   /* Arguments passed to ares_search */
-  ares_channel  channel;
-  char         *name; /* copied into an allocated buffer */
-  int           dnsclass;
-  int           type;
-  ares_callback callback;
-  void         *arg;
+  ares_channel_t *channel;
+  char           *name; /* copied into an allocated buffer */
+  int             dnsclass;
+  int             type;
+  ares_callback   callback;
+  void           *arg;
 
-  int           status_as_is;  /* error status from trying as-is */
-  size_t        next_domain;   /* next search domain to try */
-  ares_bool_t   trying_as_is;  /* current query is for name as-is */
-  size_t        timeouts;      /* number of timeouts we saw for this request */
+  int             status_as_is; /* error status from trying as-is */
+  size_t          next_domain;  /* next search domain to try */
+  ares_bool_t     trying_as_is; /* current query is for name as-is */
+  size_t          timeouts;     /* number of timeouts we saw for this request */
   ares_bool_t ever_got_nodata; /* did we ever get ARES_ENODATA along the way? */
 };
 
@@ -55,8 +55,8 @@ static void search_callback(void *arg, int status, int timeouts,
 static void end_squery(struct search_query *squery, ares_status_t status,
                        unsigned char *abuf, size_t alen);
 
-void ares_search(ares_channel channel, const char *name, int dnsclass, int type,
-                 ares_callback callback, void *arg)
+void        ares_search(ares_channel_t *channel, const char *name, int dnsclass,
+                        int type, ares_callback callback, void *arg)
 {
   struct search_query *squery;
   char                *s;
@@ -119,7 +119,7 @@ void ares_search(ares_channel channel, const char *name, int dnsclass, int type,
    * then we try the name as-is first.  Otherwise, we try the name
    * as-is last.
    */
-  if (ndots >= (size_t)channel->ndots) {
+  if (ndots >= channel->ndots) {
     /* Try the name as-is first. */
     squery->next_domain  = 0;
     squery->trying_as_is = ARES_TRUE;
@@ -145,7 +145,7 @@ static void search_callback(void *arg, int status, int timeouts,
                             unsigned char *abuf, int alen)
 {
   struct search_query *squery  = (struct search_query *)arg;
-  ares_channel         channel = squery->channel;
+  ares_channel_t      *channel = squery->channel;
   char                *s;
 
   squery->timeouts += (size_t)timeouts;
@@ -171,7 +171,7 @@ static void search_callback(void *arg, int status, int timeouts,
       squery->ever_got_nodata = ARES_TRUE;
     }
 
-    if (squery->next_domain < (size_t)channel->ndomains) {
+    if (squery->next_domain < channel->ndomains) {
       ares_status_t mystatus;
       /* Try the next domain. */
       mystatus = ares__cat_domain(squery->name,
@@ -235,8 +235,8 @@ ares_status_t ares__cat_domain(const char *name, const char *domain, char **s)
  * the string we should query, in an allocated buffer.  If not, set *s
  * to NULL.
  */
-ares_status_t ares__single_domain(ares_channel channel, const char *name,
-                                  char **s)
+ares_status_t ares__single_domain(const ares_channel_t *channel,
+                                  const char *name, char **s)
 {
   size_t        len = ares_strlen(name);
   const char   *hostaliases;

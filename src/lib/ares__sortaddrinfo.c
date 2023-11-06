@@ -70,7 +70,8 @@ struct addrinfo_sort_elem {
 #define ARES_IPV6_ADDR_SCOPE_ORGLOCAL     0x08
 #define ARES_IPV6_ADDR_SCOPE_GLOBAL       0x0e
 
-#define ARES_IN_LOOPBACK(a) ((((long int)(a)) & 0xff000000) == 0x7f000000)
+#define ARES_IN_LOOPBACK(a) \
+  ((((long unsigned int)(a)) & 0xff000000) == 0x7f000000)
 
 /* RFC 4193. */
 #define ARES_IN6_IS_ADDR_ULA(a) (((a)->s6_addr[0] & 0xfe) == 0xfc)
@@ -344,7 +345,7 @@ static int rfc6724_compare(const void *ptr1, const void *ptr2)
  * and -1 if a fatal error occurred. If 0 or 1, the contents of src_addr are
  * undefined.
  */
-static int find_src_addr(ares_channel channel, const struct sockaddr *addr,
+static int find_src_addr(ares_channel_t *channel, const struct sockaddr *addr,
                          struct sockaddr *src_addr)
 {
   ares_socket_t  sock;
@@ -393,7 +394,7 @@ static int find_src_addr(ares_channel channel, const struct sockaddr *addr,
  * Sort the linked list starting at sentinel->ai_next in RFC6724 order.
  * Will leave the list unchanged if an error occurs.
  */
-ares_status_t ares__sortaddrinfo(ares_channel               channel,
+ares_status_t ares__sortaddrinfo(ares_channel_t            *channel,
                                  struct ares_addrinfo_node *list_sentinel)
 {
   struct ares_addrinfo_node *cur;

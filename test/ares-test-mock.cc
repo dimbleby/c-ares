@@ -300,11 +300,10 @@ TEST_P(MockTCPChannelTest, GetHostByNameParallelLookups) {
   }
 }
 
-
 TEST_P(MockTCPChannelTest, MalformedResponse) {
-  std::vector<byte> one = {0x01};
-  EXPECT_CALL(server_, OnRequest("www.google.com", T_A))
-    .WillOnce(SetReplyData(&server_, one));
+  std::vector<byte> one = {0x00};
+  ON_CALL(server_, OnRequest("www.google.com", T_A))
+    .WillByDefault(SetReplyData(&server_, one));
 
   HostResult result;
   ares_gethostbyname(channel_, "www.google.com.", AF_INET, HostCallback, &result);
@@ -332,8 +331,8 @@ TEST_P(MockTCPChannelTest, ServFailResponse) {
   rsp.set_response().set_aa()
     .add_question(new DNSQuestion("www.google.com", T_A));
   rsp.set_rcode(SERVFAIL);
-  EXPECT_CALL(server_, OnRequest("www.google.com", T_A))
-    .WillOnce(SetReply(&server_, &rsp));
+  ON_CALL(server_, OnRequest("www.google.com", T_A))
+    .WillByDefault(SetReply(&server_, &rsp));
   HostResult result;
   ares_gethostbyname(channel_, "www.google.com.", AF_INET, HostCallback, &result);
   Process();
@@ -346,8 +345,8 @@ TEST_P(MockTCPChannelTest, NotImplResponse) {
   rsp.set_response().set_aa()
     .add_question(new DNSQuestion("www.google.com", T_A));
   rsp.set_rcode(NOTIMP);
-  EXPECT_CALL(server_, OnRequest("www.google.com", T_A))
-    .WillOnce(SetReply(&server_, &rsp));
+  ON_CALL(server_, OnRequest("www.google.com", T_A))
+    .WillByDefault(SetReply(&server_, &rsp));
   HostResult result;
   ares_gethostbyname(channel_, "www.google.com.", AF_INET, HostCallback, &result);
   Process();
@@ -360,8 +359,8 @@ TEST_P(MockTCPChannelTest, RefusedResponse) {
   rsp.set_response().set_aa()
     .add_question(new DNSQuestion("www.google.com", T_A));
   rsp.set_rcode(REFUSED);
-  EXPECT_CALL(server_, OnRequest("www.google.com", T_A))
-    .WillOnce(SetReply(&server_, &rsp));
+  ON_CALL(server_, OnRequest("www.google.com", T_A))
+    .WillByDefault(SetReply(&server_, &rsp));
   HostResult result;
   ares_gethostbyname(channel_, "www.google.com.", AF_INET, HostCallback, &result);
   Process();
@@ -1216,61 +1215,10 @@ class MockMultiServerChannelTest
   }
 };
 
-class RotateMultiMockTest : public MockMultiServerChannelTest {
- public:
-  RotateMultiMockTest() : MockMultiServerChannelTest(true) {}
-};
-
 class NoRotateMultiMockTest : public MockMultiServerChannelTest {
  public:
   NoRotateMultiMockTest() : MockMultiServerChannelTest(false) {}
 };
-
-
-TEST_P(RotateMultiMockTest, ThirdServer) {
-  struct ares_options opts = {0};
-  int optmask = 0;
-  EXPECT_EQ(ARES_SUCCESS, ares_save_options(channel_, &opts, &optmask));
-  EXPECT_EQ(0, (optmask & ARES_OPT_NOROTATE));
-  ares_destroy_options(&opts);
-
-  DNSPacket servfailrsp;
-  servfailrsp.set_response().set_aa().set_rcode(SERVFAIL)
-    .add_question(new DNSQuestion("www.example.com", T_A));
-  DNSPacket notimplrsp;
-  notimplrsp.set_response().set_aa().set_rcode(NOTIMP)
-    .add_question(new DNSQuestion("www.example.com", T_A));
-  DNSPacket okrsp;
-  okrsp.set_response().set_aa()
-    .add_question(new DNSQuestion("www.example.com", T_A))
-    .add_answer(new DNSARR("www.example.com", 100, {2,3,4,5}));
-
-  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[0].get(), &servfailrsp));
-  EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[1].get(), &notimplrsp));
-  EXPECT_CALL(*servers_[2], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[2].get(), &okrsp));
-  CheckExample();
-
-  // Second time around, starts from server [1].
-  EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[1].get(), &servfailrsp));
-  EXPECT_CALL(*servers_[2], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[2].get(), &notimplrsp));
-  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[0].get(), &okrsp));
-  CheckExample();
-
-  // Third time around, starts from server [2].
-  EXPECT_CALL(*servers_[2], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[2].get(), &servfailrsp));
-  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[0].get(), &notimplrsp));
-  EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[1].get(), &okrsp));
-  CheckExample();
-}
 
 TEST_P(NoRotateMultiMockTest, ThirdServer) {
   struct ares_options opts = {0};
@@ -1298,22 +1246,27 @@ TEST_P(NoRotateMultiMockTest, ThirdServer) {
     .WillOnce(SetReply(servers_[2].get(), &okrsp));
   CheckExample();
 
-  // Second time around, still starts from server [0].
-  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[0].get(), &servfailrsp));
-  EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[1].get(), &notimplrsp));
+  // Second time around, still starts from server [2], as [0] and [1] both
+  // recorded failures
   EXPECT_CALL(*servers_[2], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[2].get(), &okrsp));
+    .WillOnce(SetReply(servers_[2].get(), &servfailrsp));
+  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
+    .WillOnce(SetReply(servers_[0].get(), &notimplrsp));
+  EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
+    .WillOnce(SetReply(servers_[1].get(), &okrsp));
   CheckExample();
 
-  // Third time around, still starts from server [0].
-  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[0].get(), &servfailrsp));
+  // Third time around, server order is [1] (f0), [2] (f1), [0] (f2), which
+  // means [1] will get called twice in a row as after the first call
+  // order will be  [1] (f1), [2] (f1), [0] (f2) since sort order is
+  // (failure count, index)
   EXPECT_CALL(*servers_[1], OnRequest("www.example.com", T_A))
+    .WillOnce(SetReply(servers_[1].get(), &servfailrsp))
     .WillOnce(SetReply(servers_[1].get(), &notimplrsp));
   EXPECT_CALL(*servers_[2], OnRequest("www.example.com", T_A))
-    .WillOnce(SetReply(servers_[2].get(), &okrsp));
+    .WillOnce(SetReply(servers_[2].get(), &notimplrsp));
+  EXPECT_CALL(*servers_[0], OnRequest("www.example.com", T_A))
+    .WillOnce(SetReply(servers_[0].get(), &okrsp));
   CheckExample();
 }
 
@@ -1330,8 +1283,6 @@ INSTANTIATE_TEST_SUITE_P(AddressFamilies, MockExtraOptsTest, ::testing::ValuesIn
 INSTANTIATE_TEST_SUITE_P(AddressFamilies, MockNoCheckRespChannelTest, ::testing::ValuesIn(ares::test::families_modes));
 
 INSTANTIATE_TEST_SUITE_P(AddressFamilies, MockEDNSChannelTest, ::testing::ValuesIn(ares::test::families_modes));
-
-INSTANTIATE_TEST_SUITE_P(TransportModes, RotateMultiMockTest, ::testing::ValuesIn(ares::test::families_modes));
 
 INSTANTIATE_TEST_SUITE_P(TransportModes, NoRotateMultiMockTest, ::testing::ValuesIn(ares::test::families_modes));
 

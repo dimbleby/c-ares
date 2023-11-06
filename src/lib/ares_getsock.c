@@ -29,25 +29,25 @@
 #include "ares.h"
 #include "ares_private.h"
 
-int ares_getsock(const struct ares_channeldata *channel, ares_socket_t *socks,
+int ares_getsock(const ares_channel_t *channel, ares_socket_t *socks,
                  int numsocks) /* size of the 'socks' array */
 {
-  struct server_state *server;
-  size_t               i;
-  size_t               sockindex = 0;
-  unsigned int         bitmap    = 0;
-  unsigned int         setbits   = 0xffffffff;
+  ares__slist_node_t *snode;
+  size_t              sockindex = 0;
+  unsigned int        bitmap    = 0;
+  unsigned int        setbits   = 0xffffffff;
 
   /* Are there any active queries? */
-  size_t               active_queries = ares__llist_len(channel->all_queries);
+  size_t              active_queries = ares__llist_len(channel->all_queries);
 
   if (numsocks <= 0) {
     return 0;
   }
 
-  for (i = 0; i < channel->nservers; i++) {
-    ares__llist_node_t *node;
-    server = &channel->servers[i];
+  for (snode = ares__slist_node_first(channel->servers); snode != NULL;
+       snode = ares__slist_node_next(snode)) {
+    struct server_state *server = ares__slist_node_val(snode);
+    ares__llist_node_t  *node;
 
     for (node = ares__llist_node_first(server->connections); node != NULL;
          node = ares__llist_node_next(node)) {

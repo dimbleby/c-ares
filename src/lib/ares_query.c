@@ -50,18 +50,18 @@ static void qcallback(void *arg, int status, int timeouts, unsigned char *abuf,
    performed per id generation. In practice this search should happen only
    once per newly generated id
 */
-static unsigned short generate_unique_id(ares_channel channel)
+static unsigned short generate_unique_id(ares_channel_t *channel)
 {
   unsigned short id;
 
   do {
     id = ares__generate_new_id(channel->rand_state);
-  } while (ares__htable_stvp_get(channel->queries_by_qid, id, NULL));
+  } while (ares__htable_szvp_get(channel->queries_by_qid, id, NULL));
 
-  return (unsigned short)id;
+  return id;
 }
 
-ares_status_t ares_query_qid(ares_channel channel, const char *name,
+ares_status_t ares_query_qid(ares_channel_t *channel, const char *name,
                              int dnsclass, int type, ares_callback callback,
                              void *arg, unsigned short *qid)
 {
@@ -106,8 +106,8 @@ ares_status_t ares_query_qid(ares_channel channel, const char *name,
   return status;
 }
 
-void ares_query(ares_channel channel, const char *name, int dnsclass, int type,
-                ares_callback callback, void *arg)
+void ares_query(ares_channel_t *channel, const char *name, int dnsclass,
+                int type, ares_callback callback, void *arg)
 {
   ares_query_qid(channel, name, dnsclass, type, callback, arg, NULL);
 }
@@ -145,6 +145,8 @@ static void qcallback(void *arg, int status, int timeouts, unsigned char *abuf,
         break;
       case REFUSED:
         status = ARES_EREFUSED;
+        break;
+      default:
         break;
     }
     qquery->callback(qquery->arg, status, timeouts, abuf, alen);
