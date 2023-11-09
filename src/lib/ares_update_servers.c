@@ -382,8 +382,8 @@ static ares__slist_node_t *ares__server_find(ares_channel_t       *channel,
   return NULL;
 }
 
-static ares_bool_t ares__server_isdup(ares_channel_t     *channel,
-                                      ares__llist_node_t *s)
+static ares_bool_t ares__server_isdup(const ares_channel_t *channel,
+                                      ares__llist_node_t   *s)
 {
   /* Scan backwards to see if this is a duplicate */
   ares__llist_node_t   *prev;
@@ -471,11 +471,11 @@ done:
   return status;
 }
 
-static ares_bool_t ares__server_in_newconfig(struct server_state *server,
-                                             ares__llist_t       *srvlist)
+static ares_bool_t ares__server_in_newconfig(const struct server_state *server,
+                                             ares__llist_t             *srvlist)
 {
-  ares__llist_node_t *node;
-  ares_channel_t     *channel = server->channel;
+  ares__llist_node_t   *node;
+  const ares_channel_t *channel = server->channel;
 
   for (node = ares__llist_node_first(srvlist); node != NULL;
        node = ares__llist_node_next(node)) {
@@ -833,7 +833,8 @@ int ares_get_servers_ports(const ares_channel_t        *channel,
   return (int)status;
 }
 
-int ares_set_servers(ares_channel_t *channel, struct ares_addr_node *servers)
+int ares_set_servers(ares_channel_t              *channel,
+                     const struct ares_addr_node *servers)
 {
   ares__llist_t *slist;
   ares_status_t  status;
@@ -854,8 +855,8 @@ int ares_set_servers(ares_channel_t *channel, struct ares_addr_node *servers)
   return (int)status;
 }
 
-int ares_set_servers_ports(ares_channel_t             *channel,
-                           struct ares_addr_port_node *servers)
+int ares_set_servers_ports(ares_channel_t                   *channel,
+                           const struct ares_addr_port_node *servers)
 {
   ares__llist_t *slist;
   ares_status_t  status;
