@@ -414,6 +414,7 @@ ares_status_t ares_dns_record_rr_add(ares_dns_rr_t    **rr_out,
     return ARES_ENOMEM;
   }
 
+  rr->parent = dnsrec;
   rr->type   = type;
   rr->rclass = rclass;
   rr->ttl    = ttl;
@@ -496,6 +497,13 @@ ares_dns_rr_t *ares_dns_record_rr_get(ares_dns_record_t *dnsrec,
   }
 
   return &rr_ptr[idx];
+}
+
+static const ares_dns_rr_t *
+  ares_dns_record_rr_get_const(const ares_dns_record_t *dnsrec,
+                               ares_dns_section_t sect, size_t idx)
+{
+  return ares_dns_record_rr_get((void *)((size_t)dnsrec), sect, idx);
 }
 
 const char *ares_dns_rr_get_name(const ares_dns_rr_t *rr)
@@ -625,9 +633,6 @@ static void *ares_dns_rr_data_ptr(ares_dns_rr_t *dns_rr, ares_dns_rr_key_t key,
 
     case ARES_RR_OPT_UDP_SIZE:
       return &dns_rr->r.opt.udp_size;
-
-    case ARES_RR_OPT_EXT_RCODE:
-      return &dns_rr->r.opt.ext_rcode;
 
     case ARES_RR_OPT_VERSION:
       return &dns_rr->r.opt.version;
@@ -1232,12 +1237,14 @@ char *ares_dns_addr_to_ptr(const struct ares_addr *addr)
   ares_status_t              status;
   static const unsigned char hexbytes[] = "0123456789abcdef";
 
-  if (addr->family != AF_INET && addr->family != AF_INET6)
+  if (addr->family != AF_INET && addr->family != AF_INET6) {
     goto fail;
+  }
 
   buf = ares__buf_create();
-  if (buf == NULL)
+  if (buf == NULL) {
     goto fail;
+  }
 
   if (addr->family == AF_INET) {
     ptr     = (const unsigned char *)&addr->addr.addr4;
@@ -1247,30 +1254,34 @@ char *ares_dns_addr_to_ptr(const struct ares_addr *addr)
     ptr_len = 16;
   }
 
-  for (i=ptr_len; i>0; i--) {
+  for (i = ptr_len; i > 0; i--) {
     if (addr->family == AF_INET) {
-      status = ares__buf_append_num_dec(buf, (size_t)ptr[i-1], 0);
+      status = ares__buf_append_num_dec(buf, (size_t)ptr[i - 1], 0);
     } else {
       unsigned char c;
 
-      c = ptr[i-1] & 0xF;
+      c      = ptr[i - 1] & 0xF;
       status = ares__buf_append_byte(buf, hexbytes[c]);
-      if (status != ARES_SUCCESS)
+      if (status != ARES_SUCCESS) {
         goto fail;
+      }
 
       status = ares__buf_append_byte(buf, '.');
-      if (status != ARES_SUCCESS)
+      if (status != ARES_SUCCESS) {
         goto fail;
+      }
 
-      c = (ptr[i-1] >> 4) & 0xF;
+      c      = (ptr[i - 1] >> 4) & 0xF;
       status = ares__buf_append_byte(buf, hexbytes[c]);
     }
-    if (status != ARES_SUCCESS)
+    if (status != ARES_SUCCESS) {
       goto fail;
+    }
 
     status = ares__buf_append_byte(buf, '.');
-    if (status != ARES_SUCCESS)
+    if (status != ARES_SUCCESS) {
       goto fail;
+    }
   }
 
   if (addr->family == AF_INET) {
@@ -1278,12 +1289,28 @@ char *ares_dns_addr_to_ptr(const struct ares_addr *addr)
   } else {
     status = ares__buf_append(buf, (const unsigned char *)"ip6.arpa", 8);
   }
-  if (status != ARES_SUCCESS)
+  if (status != ARES_SUCCESS) {
     goto fail;
+  }
 
   return ares__buf_finish_str(buf, NULL);
 
 fail:
   ares__buf_destroy(buf);
   return NULL;
+}
+
+/* search for an OPT RR in the response */
+ares_bool_t ares_dns_has_opt_rr(const ares_dns_record_t *rec)
+{
+  size_t i;
+  for (i = 0; i < ares_dns_record_rr_cnt(rec, ARES_SECTION_ADDITIONAL); i++) {
+    const ares_dns_rr_t *rr =
+      ares_dns_record_rr_get_const(rec, ARES_SECTION_ADDITIONAL, i);
+
+    if (ares_dns_rr_get_type(rr) == ARES_REC_TYPE_OPT) {
+      return ARES_TRUE;
+    }
+  }
+  return ARES_FALSE;
 }

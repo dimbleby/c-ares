@@ -194,6 +194,7 @@ typedef enum {
 #define ARES_OPT_RESOLVCONF      (1 << 17)
 #define ARES_OPT_HOSTS_FILE      (1 << 18)
 #define ARES_OPT_UDP_MAX_QUERIES (1 << 19)
+#define ARES_OPT_MAXTIMEOUTMS    (1 << 20)
 
 /* Nameinfo flag values */
 #define ARES_NI_NOFQDN        (1 << 0)
@@ -304,6 +305,7 @@ struct ares_options {
   char              *resolvconf_path;
   char              *hosts_path;
   int                udp_max_queries;
+  int                maxtimeout; /* in milliseconds */
 };
 
 struct hostent;

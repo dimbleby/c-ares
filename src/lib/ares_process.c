@@ -37,6 +37,9 @@
 #ifdef NETWARE
 #  include <sys/filio.h>
 #endif
+#ifdef HAVE_STDINT_H
+#  include <stdint.h>
+#endif
 
 #include <assert.h>
 #include <fcntl.h>
@@ -64,7 +67,6 @@ static ares_bool_t   same_questions(const ares_dns_record_t *qrec,
                                     const ares_dns_record_t *arec);
 static ares_bool_t   same_address(const struct sockaddr  *sa,
                                   const struct ares_addr *aa);
-static ares_bool_t   has_opt_rr(ares_dns_record_t *arec);
 static void end_query(const ares_channel_t *channel, struct query *query,
                       ares_status_t status, const unsigned char *abuf,
                       size_t alen);
@@ -657,7 +659,7 @@ static ares_status_t process_answer(ares_channel_t      *channel,
    * protocol extension is not understood by the responder. We must retry the
    * query without EDNS enabled. */
   if (ares_dns_record_get_rcode(rdnsrec) == ARES_RCODE_FORMERR &&
-      has_opt_rr(qdnsrec) && !has_opt_rr(rdnsrec)) {
+      ares_dns_has_opt_rr(qdnsrec) && !ares_dns_has_opt_rr(rdnsrec)) {
     status = rewrite_without_edns(qdnsrec, query);
     if (status != ARES_SUCCESS) {
       end_query(channel, query, status, NULL, 0);
@@ -686,8 +688,8 @@ static ares_status_t process_answer(ares_channel_t      *channel,
    */
   if (!(channel->flags & ARES_FLAG_NOCHECKRESP)) {
     ares_dns_rcode_t rcode = ares_dns_record_get_rcode(rdnsrec);
-    if (rcode == ARES_RCODE_SERVFAIL ||
-        rcode == ARES_RCODE_NOTIMP || rcode == ARES_RCODE_REFUSED) {
+    if (rcode == ARES_RCODE_SERVFAIL || rcode == ARES_RCODE_NOTIMP ||
+        rcode == ARES_RCODE_REFUSED) {
       switch (rcode) {
         case ARES_RCODE_SERVFAIL:
           query->error_status = ARES_ESERVFAIL;
@@ -795,32 +797,46 @@ static ares_status_t ares__append_tcpbuf(struct server_state *server,
   return ares__buf_append(server->tcp_send, query->qbuf, query->qlen);
 }
 
-static size_t ares__retry_penalty(struct query *query)
+static size_t ares__calc_query_timeout(const struct query *query)
 {
   const ares_channel_t *channel  = query->channel;
   size_t                timeplus = channel->timeout;
-  size_t                shift;
+  size_t                rounds;
 
-  /* For each trip through the entire server list, double the channel's
-   * assigned timeout, avoiding overflow.  If channel->timeout is negative,
-   * leave it as-is, even though that should be impossible here.
-   */
+  /* For each trip through the entire server list, we want to double the
+   * retry from the last retry */
+  rounds = (query->try_count / ares__slist_len(channel->servers));
 
-  /* How many times do we want to double it?  Presume sane values here. */
-  shift = query->try_count / ares__slist_len(channel->servers);
+  if (rounds > 0) {
+    timeplus <<= rounds;
+  }
 
-  /* Is there enough room to shift timeplus left that many times?
+  if (channel->maxtimeout && timeplus > channel->maxtimeout) {
+    timeplus = channel->maxtimeout;
+  }
+
+  /* Add some jitter to the retry timeout.
    *
-   * To find out, confirm that all of the bits we'll shift away are zero.
-   * Stop considering a shift if we get to the point where we could shift
-   * a 1 into the sign bit (i.e. when shift is within two of the bit
-   * count).
+   * Jitter is needed in situation when resolve requests are performed
+   * simultaneously from multiple hosts and DNS server throttle these requests.
+   * Adding randomness allows to avoid synchronisation of retries.
    *
-   * This has the side benefit of leaving negative numbers unchanged.
+   * Value of timeplus adjusted randomly to the range [0.5 * timeplus,
+   * timeplus].
    */
-  if (shift <= (sizeof(int) * CHAR_BIT - 1) &&
-      (timeplus >> (sizeof(int) * CHAR_BIT - 1 - shift)) == 0) {
-    timeplus <<= shift;
+  if (rounds > 0) {
+    unsigned short r;
+    float          delta_multiplier;
+
+    ares__rand_bytes(channel->rand_state, (unsigned char *)&r, sizeof(r));
+    delta_multiplier  = ((float)r / USHRT_MAX) * 0.5f;
+    timeplus         -= (size_t)((float)timeplus * delta_multiplier);
+  }
+
+  /* We want explicitly guarantee that timeplus is greater or equal to timeout
+   * specified in channel options. */
+  if (timeplus < channel->timeout) {
+    timeplus = channel->timeout;
   }
 
   return timeplus;
@@ -949,7 +965,7 @@ ares_status_t ares__send_query(struct query *query, struct timeval *now)
     }
   }
 
-  timeplus = ares__retry_penalty(query);
+  timeplus = ares__calc_query_timeout(query);
 
   /* Keep track of queries bucketed by timeout, so we can process
    * timeout events quickly.
@@ -1058,21 +1074,6 @@ static ares_bool_t same_address(const struct sockaddr  *sa,
     }
   }
   return ARES_FALSE; /* different */
-}
-
-/* search for an OPT RR in the response */
-static ares_bool_t has_opt_rr(ares_dns_record_t *arec)
-{
-  size_t i;
-  for (i = 0; i < ares_dns_record_rr_cnt(arec, ARES_SECTION_ADDITIONAL); i++) {
-    const ares_dns_rr_t *rr =
-      ares_dns_record_rr_get(arec, ARES_SECTION_ADDITIONAL, i);
-
-    if (ares_dns_rr_get_type(rr) == ARES_REC_TYPE_OPT) {
-      return ARES_TRUE;
-    }
-  }
-  return ARES_FALSE;
 }
 
 static void ares_detach_query(struct query *query)

@@ -146,12 +146,14 @@ static void print_help(void)
     "              SOA, SRV, TXT, TLSA, URI, CAA, SVCB, HTTPS\n\n");
 }
 
-static ares_bool_t read_cmdline(int argc, const char **argv, adig_config_t *config)
+static ares_bool_t read_cmdline(int argc, const char **argv,
+                                adig_config_t *config)
 {
   ares_getopt_state_t state;
   int                 c;
 
   ares_getopt_init(&state, argc, argv);
+  state.opterr = 0;
 
   while ((c = ares_getopt(&state, "dh?f:s:c:t:T:U:")) != -1) {
     int f;
@@ -164,7 +166,6 @@ static ares_bool_t read_cmdline(int argc, const char **argv, adig_config_t *conf
         break;
 
       case 'h':
-      case '?':
         config->is_help = ARES_TRUE;
         return ARES_TRUE;
 
@@ -193,15 +194,15 @@ static ares_bool_t read_cmdline(int argc, const char **argv, adig_config_t *conf
 
       case 'c':
         if (!ares_dns_class_fromstr(&config->qclass, state.optarg)) {
-          snprintf(config->error, sizeof(config->error), "unrecognied class %s",
-                   state.optarg);
+          snprintf(config->error, sizeof(config->error),
+                   "unrecognized class %s", state.optarg);
           return ARES_FALSE;
         }
         break;
 
       case 't':
         if (!ares_dns_rec_type_fromstr(&config->qtype, state.optarg)) {
-          snprintf(config->error, sizeof(config->error), "unrecognied type %s",
+          snprintf(config->error, sizeof(config->error), "unrecognized type %s",
                    state.optarg);
           return ARES_FALSE;
         }
@@ -213,9 +214,10 @@ static ares_bool_t read_cmdline(int argc, const char **argv, adig_config_t *conf
           snprintf(config->error, sizeof(config->error), "invalid port number");
           return ARES_FALSE;
         }
-        config->options.tcp_port  = (unsigned short)strtol(state.optarg, NULL, 0);
-        config->options.flags    |= ARES_FLAG_USEVC;
-        config->optmask          |= ARES_OPT_TCP_PORT;
+        config->options.tcp_port =
+          (unsigned short)strtol(state.optarg, NULL, 0);
+        config->options.flags |= ARES_FLAG_USEVC;
+        config->optmask       |= ARES_OPT_TCP_PORT;
         break;
 
       case 'U':
@@ -224,12 +226,19 @@ static ares_bool_t read_cmdline(int argc, const char **argv, adig_config_t *conf
           snprintf(config->error, sizeof(config->error), "invalid port number");
           return ARES_FALSE;
         }
-        config->options.udp_port  = (unsigned short)strtol(state.optarg, NULL, 0);
-        config->optmask          |= ARES_OPT_UDP_PORT;
+        config->options.udp_port =
+          (unsigned short)strtol(state.optarg, NULL, 0);
+        config->optmask |= ARES_OPT_UDP_PORT;
         break;
 
+      case ':':
+        snprintf(config->error, sizeof(config->error),
+                 "%c requires an argument", state.optopt);
+        return ARES_FALSE;
+
       default:
-        snprintf(config->error, sizeof(config->error), "unrecognized option %c", c);
+        snprintf(config->error, sizeof(config->error),
+                 "unrecognized option: %c", state.optopt);
         return ARES_FALSE;
     }
   }
@@ -291,10 +300,13 @@ static void print_question(const ares_dns_record_t *dnsrec)
     ares_dns_rec_type_t qtype;
     ares_dns_class_t    qclass;
     size_t              len;
-    if (ares_dns_record_query_get(dnsrec, i, &name, &qtype, &qclass) != ARES_SUCCESS)
+    if (ares_dns_record_query_get(dnsrec, i, &name, &qtype, &qclass) !=
+        ARES_SUCCESS) {
       return;
-    if (name == NULL)
+    }
+    if (name == NULL) {
       return;
+    }
     len = strlen(name);
     printf(";%s.\t", name);
     if (len + 1 < 24) {
@@ -372,13 +384,13 @@ static void print_opt_u16_list(const unsigned char *val, size_t val_len)
     return;
   }
   for (i = 0; i < val_len; i += 2) {
-    unsigned short u16  = 0;
+    unsigned short u16 = 0;
     unsigned short c;
     /* Jumping over backwards to try to avoid odd compiler warnings */
-    c                   = (unsigned short)val[i];
-    u16                |= (unsigned short)((c << 8) & 0xFFFF);
-    c                   = (unsigned short)val[i+1];
-    u16                |= c;
+    c    = (unsigned short)val[i];
+    u16 |= (unsigned short)((c << 8) & 0xFFFF);
+    c    = (unsigned short)val[i + 1];
+    u16 |= c;
     if (i != 0) {
       printf(",");
     }
@@ -615,8 +627,9 @@ static void print_rr(const ares_dns_rr_t *rr)
   const ares_dns_rr_key_t *keys     = ares_dns_rr_get_keys(rtype, &keys_cnt);
   size_t                   i;
 
-  if (name == NULL)
+  if (name == NULL) {
     return;
+  }
 
   len = strlen(name);
 
@@ -762,8 +775,8 @@ static ares_status_t enqueue_query(ares_channel_t      *channel,
                                    const adig_config_t *config,
                                    const char          *name)
 {
-  ares_dns_record_t *dnsrec   = NULL;
-  ares_dns_rr_t     *rr       = NULL;
+  ares_dns_record_t *dnsrec = NULL;
+  ares_dns_rr_t     *rr     = NULL;
   ares_status_t      status;
   unsigned char     *buf      = NULL;
   size_t             buf_len  = 0;
@@ -821,13 +834,52 @@ done:
   return status;
 }
 
+static int event_loop(ares_channel_t *channel)
+{
+  while (1) {
+    fd_set          read_fds;
+    fd_set          write_fds;
+    int             nfds;
+    struct timeval  tv;
+    struct timeval *tvp;
+    int             count;
+
+    FD_ZERO(&read_fds);
+    FD_ZERO(&write_fds);
+    memset(&tv, 0, sizeof(tv));
+
+    nfds = ares_fds(channel, &read_fds, &write_fds);
+    if (nfds == 0) {
+      break;
+    }
+    tvp = ares_timeout(channel, NULL, &tv);
+    if (tvp == NULL) {
+      break;
+    }
+    count = select(nfds, &read_fds, &write_fds, NULL, tvp);
+    if (count < 0) {
+#ifdef USE_WINSOCK
+      int err = WSAGetLastError();
+#else
+      int err = errno;
+#endif
+      if (err != EAGAIN && err != EINTR) {
+        fprintf(stderr, "select fail: %d", err);
+        return 1;
+      }
+    }
+    ares_process(channel, &read_fds, &write_fds);
+  }
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   ares_channel_t *channel = NULL;
   ares_status_t   status;
   adig_config_t   config;
   int             i;
-  int             rv      = 0;
+  int             rv = 0;
 
 #ifdef USE_WINSOCK
   WORD    wVersionRequested = MAKEWORD(USE_WINSOCK, USE_WINSOCK);
@@ -845,7 +897,7 @@ int main(int argc, char **argv)
   config.qclass = ARES_CLASS_IN;
   config.qtype  = ARES_REC_TYPE_A;
   if (!read_cmdline(argc, (const char **)argv, &config)) {
-    printf("%s\n", config.error);
+    printf("\n** ERROR: %s\n\n", config.error);
     print_help();
     rv = 1;
     goto done;
@@ -892,41 +944,8 @@ int main(int argc, char **argv)
   }
   printf("\n");
 
-  while (1) {
-    fd_set          read_fds;
-    fd_set          write_fds;
-    int             nfds;
-    struct timeval  tv;
-    struct timeval *tvp;
-    int             count;
-
-    FD_ZERO(&read_fds);
-    FD_ZERO(&write_fds);
-    memset(&tv, 0, sizeof(tv));
-
-    nfds = ares_fds(channel, &read_fds, &write_fds);
-    if (nfds == 0) {
-      break;
-    }
-    tvp = ares_timeout(channel, NULL, &tv);
-    if (tvp == NULL) {
-      break;
-    }
-    count = select(nfds, &read_fds, &write_fds, NULL, tvp);
-    if (count < 0) {
-#ifdef USE_WINSOCK
-      int err = WSAGetLastError();
-#else
-      int err = errno;
-#endif
-      if (err != EAGAIN && err != EINTR) {
-        fprintf(stderr, "select fail: %d", err);
-        rv = 1;
-        goto done;
-      }
-    }
-    ares_process(channel, &read_fds, &write_fds);
-  }
+  /* Process events */
+  rv = event_loop(channel);
 
 done:
   free_config(&config);
