@@ -45,10 +45,11 @@ struct ares_options {
   char *resolvconf_path;
   char *hosts_path;
   int udp_max_queries;
+  int maxtimeout; /* in milliseconds */
 };
 
-int ares_init_options(ares_channel *\fIchannelptr\fP,
-                      struct ares_options *\fIoptions\fP,
+int ares_init_options(ares_channel_t **\fIchannelptr\fP,
+                      const struct ares_options *\fIoptions\fP,
                       int \fIoptmask\fP)
 .fi
 .SH DESCRIPTION
@@ -101,6 +102,13 @@ The number of dots which must be present in a domain name for it to be
 queried for "as is" prior to querying for it with the default domain
 extensions appended.  The default value is 1 unless set otherwise by
 resolv.conf or the RES_OPTIONS environment variable.
+.TP 18
+.B ARES_OPT_MAXTIMEOUTMS
+.B int \fImaxtimeout\fP;
+.br
+The upper bound for timeout between sequential retry attempts.  When retrying
+queries, the timeout is increased from the requested timeout parameter, this
+caps the value.
 .TP 18
 .B ARES_OPT_UDP_PORT
 .B unsigned short \fIudp_port\fP;
@@ -185,7 +193,7 @@ The receive buffer size to set for the socket.
 .br
 The message size to be advertized in EDNS; only takes effect if the
 .B ARES_FLAG_EDNS
-flag is set.
+flag is set.  Defaults to 1280, the recommended size.
 .TP 18
 .B ARES_OPT_RESOLVCONF
 .B char *\fIresolvconf_path\fP;
@@ -270,7 +278,8 @@ in the request.  Primarily useful for writing clients which might be
 used to test or debug name servers.
 .TP 23
 .B ARES_FLAG_EDNS
-Include an EDNS pseudo-resource record (RFC 2671) in generated requests.
+Include an EDNS pseudo-resource record (RFC 2671) in generated requests.  As of
+v1.22, this is on by default if flags are otherwise not set.
 .SH RETURN VALUES
 \fBares_init_options(3)\fP can return any of the following values:
 .TP 14
@@ -300,6 +309,7 @@ the last occurrence wins. For more information, please see the
 manual page.
 .SH SEE ALSO
 .BR ares_init (3),
+.BR ares_reinit (3),
 .BR ares_destroy (3),
 .BR ares_dup (3),
 .BR ares_library_init (3),

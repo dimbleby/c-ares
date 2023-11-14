@@ -26,7 +26,6 @@
 #include "ares_setup.h"
 #include "ares.h"
 #include "ares_private.h"
-#include "ares_dns_record.h"
 
 ares_bool_t ares_dns_opcode_isvalid(ares_dns_opcode_t opcode)
 {
@@ -45,16 +44,25 @@ ares_bool_t ares_dns_rcode_isvalid(ares_dns_rcode_t rcode)
 {
   switch (rcode) {
     case ARES_RCODE_NOERROR:
-    case ARES_RCODE_FORMAT_ERROR:
-    case ARES_RCODE_SERVER_FAILURE:
-    case ARES_RCODE_NAME_ERROR:
-    case ARES_RCODE_NOT_IMPLEMENTED:
+    case ARES_RCODE_FORMERR:
+    case ARES_RCODE_SERVFAIL:
+    case ARES_RCODE_NXDOMAIN:
+    case ARES_RCODE_NOTIMP:
     case ARES_RCODE_REFUSED:
     case ARES_RCODE_YXDOMAIN:
     case ARES_RCODE_YXRRSET:
     case ARES_RCODE_NXRRSET:
     case ARES_RCODE_NOTAUTH:
     case ARES_RCODE_NOTZONE:
+    case ARES_RCODE_DSOTYPEI:
+    case ARES_RCODE_BADSIG:
+    case ARES_RCODE_BADKEY:
+    case ARES_RCODE_BADTIME:
+    case ARES_RCODE_BADMODE:
+    case ARES_RCODE_BADNAME:
+    case ARES_RCODE_BADALG:
+    case ARES_RCODE_BADTRUNC:
+    case ARES_RCODE_BADCOOKIE:
       return ARES_TRUE;
   }
   return ARES_FALSE;
@@ -89,11 +97,9 @@ ares_bool_t ares_dns_rec_type_isvalid(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_SRV:
     case ARES_REC_TYPE_NAPTR:
     case ARES_REC_TYPE_OPT:
-#if 0
     case ARES_REC_TYPE_TLSA:
-    case ARES_REC_TYPE_SVBC:
+    case ARES_REC_TYPE_SVCB:
     case ARES_REC_TYPE_HTTPS:
-#endif
     case ARES_REC_TYPE_ANY:
     case ARES_REC_TYPE_URI:
     case ARES_REC_TYPE_CAA:
@@ -104,6 +110,27 @@ ares_bool_t ares_dns_rec_type_isvalid(ares_dns_rec_type_t type,
       break;
   }
   return is_query ? ARES_TRUE : ARES_FALSE;
+}
+
+ares_bool_t ares_dns_rec_type_allow_name_compression(ares_dns_rec_type_t type)
+{
+  /* Only record types defined in RFC1035 allow name compression within the
+   * RDATA.  Otherwise nameservers that don't understand an RR may not be
+   * able to pass along the RR in a proper manner */
+  switch (type) {
+    case ARES_REC_TYPE_A:
+    case ARES_REC_TYPE_NS:
+    case ARES_REC_TYPE_CNAME:
+    case ARES_REC_TYPE_SOA:
+    case ARES_REC_TYPE_PTR:
+    case ARES_REC_TYPE_HINFO:
+    case ARES_REC_TYPE_MX:
+    case ARES_REC_TYPE_TXT:
+      return ARES_TRUE;
+    default:
+      break;
+  }
+  return ARES_FALSE;
 }
 
 ares_bool_t ares_dns_class_isvalid(ares_dns_class_t qclass,
@@ -172,14 +199,12 @@ const char *ares_dns_rec_type_tostr(ares_dns_rec_type_t type)
       return "NAPTR";
     case ARES_REC_TYPE_OPT:
       return "OPT";
-#if 0
     case ARES_REC_TYPE_TLSA:
       return "TLSA";
-    case ARES_REC_TYPE_SVBC:
-      return "SVBC";
+    case ARES_REC_TYPE_SVCB:
+      return "SVCB";
     case ARES_REC_TYPE_HTTPS:
       return "HTTPS";
-#endif
     case ARES_REC_TYPE_ANY:
       return "ANY";
     case ARES_REC_TYPE_URI:
@@ -313,14 +338,44 @@ const char *ares_dns_rr_key_tostr(ares_dns_rr_key_t key)
     case ARES_RR_OPT_UDP_SIZE:
       return "UDP_SIZE";
 
-    case ARES_RR_OPT_EXT_RCODE:
-      return "EXT_RCODE";
-
     case ARES_RR_OPT_VERSION:
       return "VERSION";
 
     case ARES_RR_OPT_FLAGS:
       return "FLAGS";
+
+    case ARES_RR_OPT_OPTIONS:
+      return "OPTIONS";
+
+    case ARES_RR_TLSA_CERT_USAGE:
+      return "CERT_USAGE";
+
+    case ARES_RR_TLSA_SELECTOR:
+      return "SELECTOR";
+
+    case ARES_RR_TLSA_MATCH:
+      return "MATCH";
+
+    case ARES_RR_TLSA_DATA:
+      return "DATA";
+
+    case ARES_RR_SVCB_PRIORITY:
+      return "PRIORITY";
+
+    case ARES_RR_SVCB_TARGET:
+      return "TARGET";
+
+    case ARES_RR_SVCB_PARAMS:
+      return "PARAMS";
+
+    case ARES_RR_HTTPS_PRIORITY:
+      return "PRIORITY";
+
+    case ARES_RR_HTTPS_TARGET:
+      return "TARGET";
+
+    case ARES_RR_HTTPS_PARAMS:
+      return "PARAMS";
 
     case ARES_RR_URI_PRIORITY:
       return "PRIORITY";
@@ -364,15 +419,19 @@ ares_dns_datatype_t ares_dns_rr_key_datatype(ares_dns_rr_key_t key)
     case ARES_RR_SOA_MNAME:
     case ARES_RR_SOA_RNAME:
     case ARES_RR_PTR_DNAME:
-    case ARES_RR_HINFO_CPU:
-    case ARES_RR_HINFO_OS:
     case ARES_RR_MX_EXCHANGE:
     case ARES_RR_SRV_TARGET:
+    case ARES_RR_SVCB_TARGET:
+    case ARES_RR_HTTPS_TARGET:
+    case ARES_RR_NAPTR_REPLACEMENT:
+    case ARES_RR_URI_TARGET:
+      return ARES_DATATYPE_NAME;
+
+    case ARES_RR_HINFO_CPU:
+    case ARES_RR_HINFO_OS:
     case ARES_RR_NAPTR_FLAGS:
     case ARES_RR_NAPTR_SERVICES:
     case ARES_RR_NAPTR_REGEXP:
-    case ARES_RR_NAPTR_REPLACEMENT:
-    case ARES_RR_URI_TARGET:
     case ARES_RR_CAA_TAG:
       return ARES_DATATYPE_STR;
 
@@ -391,20 +450,32 @@ ares_dns_datatype_t ares_dns_rr_key_datatype(ares_dns_rr_key_t key)
     case ARES_RR_NAPTR_PREFERENCE:
     case ARES_RR_OPT_UDP_SIZE:
     case ARES_RR_OPT_FLAGS:
+    case ARES_RR_SVCB_PRIORITY:
+    case ARES_RR_HTTPS_PRIORITY:
     case ARES_RR_URI_PRIORITY:
     case ARES_RR_URI_WEIGHT:
     case ARES_RR_RAW_RR_TYPE:
       return ARES_DATATYPE_U16;
 
-    case ARES_RR_OPT_EXT_RCODE:
     case ARES_RR_OPT_VERSION:
+    case ARES_RR_TLSA_CERT_USAGE:
+    case ARES_RR_TLSA_SELECTOR:
+    case ARES_RR_TLSA_MATCH:
     case ARES_RR_CAA_CRITICAL:
       return ARES_DATATYPE_U8;
 
     case ARES_RR_CAA_VALUE:
     case ARES_RR_TXT_DATA:
+      return ARES_DATATYPE_BINP;
+
+    case ARES_RR_TLSA_DATA:
     case ARES_RR_RAW_RR_DATA:
       return ARES_DATATYPE_BIN;
+
+    case ARES_RR_OPT_OPTIONS:
+    case ARES_RR_SVCB_PARAMS:
+    case ARES_RR_HTTPS_PARAMS:
+      return ARES_DATATYPE_OPT;
   }
 
   return 0;
@@ -433,9 +504,19 @@ static const ares_dns_rr_key_t rr_naptr_keys[] = {
   ARES_RR_NAPTR_SERVICES, ARES_RR_NAPTR_REGEXP,     ARES_RR_NAPTR_REPLACEMENT
 };
 static const ares_dns_rr_key_t rr_opt_keys[]    = { ARES_RR_OPT_UDP_SIZE,
-                                                    ARES_RR_OPT_EXT_RCODE,
                                                     ARES_RR_OPT_VERSION,
-                                                    ARES_RR_OPT_FLAGS };
+                                                    ARES_RR_OPT_FLAGS,
+                                                    ARES_RR_OPT_OPTIONS };
+static const ares_dns_rr_key_t rr_tlsa_keys[]   = { ARES_RR_TLSA_CERT_USAGE,
+                                                    ARES_RR_TLSA_SELECTOR,
+                                                    ARES_RR_TLSA_MATCH,
+                                                    ARES_RR_TLSA_DATA };
+static const ares_dns_rr_key_t rr_svcb_keys[]   = { ARES_RR_SVCB_PRIORITY,
+                                                    ARES_RR_SVCB_TARGET,
+                                                    ARES_RR_SVCB_PARAMS };
+static const ares_dns_rr_key_t rr_https_keys[]  = { ARES_RR_HTTPS_PRIORITY,
+                                                    ARES_RR_HTTPS_TARGET,
+                                                    ARES_RR_HTTPS_PARAMS };
 static const ares_dns_rr_key_t rr_uri_keys[]    = { ARES_RR_URI_PRIORITY,
                                                     ARES_RR_URI_WEIGHT,
                                                     ARES_RR_URI_TARGET };
@@ -491,17 +572,15 @@ const ares_dns_rr_key_t       *ares_dns_rr_get_keys(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_OPT:
       *cnt = sizeof(rr_opt_keys) / sizeof(*rr_opt_keys);
       return rr_opt_keys;
-#if 0
     case ARES_REC_TYPE_TLSA:
       *cnt = sizeof(rr_tlsa_keys) / sizeof(*rr_tlsa_keys);
       return rr_tlsa_keys;
-    case ARES_REC_TYPE_SVBC:
-      *cnt = sizeof(rr_svbc_keys) / sizeof(*rr_svbc_keys);
-      return rr_svbc_keys;
+    case ARES_REC_TYPE_SVCB:
+      *cnt = sizeof(rr_svcb_keys) / sizeof(*rr_svcb_keys);
+      return rr_svcb_keys;
     case ARES_REC_TYPE_HTTPS:
       *cnt = sizeof(rr_https_keys) / sizeof(*rr_https_keys);
       return rr_https_keys;
-#endif
     case ARES_REC_TYPE_ANY:
       /* Not real */
       break;
@@ -517,4 +596,290 @@ const ares_dns_rr_key_t       *ares_dns_rr_get_keys(ares_dns_rec_type_t type,
   }
 
   return NULL;
+}
+
+ares_bool_t ares_dns_class_fromstr(ares_dns_class_t *qclass, const char *str)
+{
+  size_t i;
+
+  static const struct {
+    const char      *name;
+    ares_dns_class_t qclass;
+  } list[] = {
+    {"IN",    ARES_CLASS_IN    },
+    { "CH",   ARES_CLASS_CHAOS },
+    { "HS",   ARES_CLASS_HESOID},
+    { "NONE", ARES_CLASS_NONE  },
+    { "ANY",  ARES_CLASS_ANY   },
+    { NULL,   0                }
+  };
+
+  if (qclass == NULL || str == NULL) {
+    return ARES_FALSE;
+  }
+
+  for (i = 0; list[i].name != NULL; i++) {
+    if (strcasecmp(list[i].name, str) == 0) {
+      *qclass = list[i].qclass;
+      return ARES_TRUE;
+    }
+  }
+  return ARES_FALSE;
+}
+
+ares_bool_t ares_dns_rec_type_fromstr(ares_dns_rec_type_t *qtype,
+                                      const char          *str)
+{
+  size_t i;
+
+  static const struct {
+    const char         *name;
+    ares_dns_rec_type_t type;
+  } list[] = {
+    {"A",       ARES_REC_TYPE_A     },
+    { "NS",     ARES_REC_TYPE_NS    },
+    { "CNAME",  ARES_REC_TYPE_CNAME },
+    { "SOA",    ARES_REC_TYPE_SOA   },
+    { "PTR",    ARES_REC_TYPE_PTR   },
+    { "HINFO",  ARES_REC_TYPE_HINFO },
+    { "MX",     ARES_REC_TYPE_MX    },
+    { "TXT",    ARES_REC_TYPE_TXT   },
+    { "AAAA",   ARES_REC_TYPE_AAAA  },
+    { "SRV",    ARES_REC_TYPE_SRV   },
+    { "NAPTR",  ARES_REC_TYPE_NAPTR },
+    { "OPT",    ARES_REC_TYPE_OPT   },
+    { "TLSA",   ARES_REC_TYPE_TLSA  },
+    { "SVCB",   ARES_REC_TYPE_SVCB  },
+    { "HTTPS",  ARES_REC_TYPE_HTTPS },
+    { "ANY",    ARES_REC_TYPE_ANY   },
+    { "URI",    ARES_REC_TYPE_URI   },
+    { "CAA",    ARES_REC_TYPE_CAA   },
+    { "RAW_RR", ARES_REC_TYPE_RAW_RR},
+    { NULL,     0                   }
+  };
+
+  if (qtype == NULL || str == NULL) {
+    return ARES_FALSE;
+  }
+
+  for (i = 0; list[i].name != NULL; i++) {
+    if (strcasecmp(list[i].name, str) == 0) {
+      *qtype = list[i].type;
+      return ARES_TRUE;
+    }
+  }
+  return ARES_FALSE;
+}
+
+const char *ares_dns_section_tostr(ares_dns_section_t section)
+{
+  switch (section) {
+    case ARES_SECTION_ANSWER:
+      return "ANSWER";
+    case ARES_SECTION_AUTHORITY:
+      return "AUTHORITY";
+    case ARES_SECTION_ADDITIONAL:
+      return "ADDITIONAL";
+  }
+  return "UNKNOWN";
+}
+
+static ares_dns_opt_datatype_t ares_dns_opt_get_type_opt(unsigned short opt)
+{
+  ares_opt_param_t param = (ares_opt_param_t)opt;
+  switch (param) {
+    case ARES_OPT_PARAM_LLQ:
+      /* Really it is u16 version, u16 opcode, u16 error, u64 id, u32 lease */
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_OPT_PARAM_UL:
+      return ARES_OPT_DATATYPE_U32;
+    case ARES_OPT_PARAM_NSID:
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_OPT_PARAM_DAU:
+      return ARES_OPT_DATATYPE_U8_LIST;
+    case ARES_OPT_PARAM_DHU:
+      return ARES_OPT_DATATYPE_U8_LIST;
+    case ARES_OPT_PARAM_N3U:
+      return ARES_OPT_DATATYPE_U8_LIST;
+    case ARES_OPT_PARAM_EDNS_CLIENT_SUBNET:
+      /* Really it is a u16 address family, u8 source prefix length,
+       * u8 scope prefix length, address */
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_OPT_PARAM_EDNS_EXPIRE:
+      return ARES_OPT_DATATYPE_U32;
+    case ARES_OPT_PARAM_COOKIE:
+      /* 8 bytes for client, 16-40 bytes for server */
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_OPT_PARAM_EDNS_TCP_KEEPALIVE:
+      /* Timeout in 100ms intervals */
+      return ARES_OPT_DATATYPE_U16;
+    case ARES_OPT_PARAM_PADDING:
+      /* Arbitrary padding */
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_OPT_PARAM_CHAIN:
+      return ARES_OPT_DATATYPE_NAME;
+    case ARES_OPT_PARAM_EDNS_KEY_TAG:
+      return ARES_OPT_DATATYPE_U16_LIST;
+    case ARES_OPT_PARAM_EXTENDED_DNS_ERROR:
+      /* Really 16bit code followed by textual message */
+      return ARES_OPT_DATATYPE_BIN;
+  }
+  return ARES_OPT_DATATYPE_BIN;
+}
+
+static ares_dns_opt_datatype_t ares_dns_opt_get_type_svcb(unsigned short opt)
+{
+  ares_svcb_param_t param = (ares_svcb_param_t)opt;
+  switch (param) {
+    case ARES_SVCB_PARAM_NO_DEFAULT_ALPN:
+      return ARES_OPT_DATATYPE_NONE;
+    case ARES_SVCB_PARAM_ECH:
+      return ARES_OPT_DATATYPE_BIN;
+    case ARES_SVCB_PARAM_MANDATORY:
+      return ARES_OPT_DATATYPE_U16_LIST;
+    case ARES_SVCB_PARAM_ALPN:
+      return ARES_OPT_DATATYPE_STR_LIST;
+    case ARES_SVCB_PARAM_PORT:
+      return ARES_OPT_DATATYPE_U16;
+    case ARES_SVCB_PARAM_IPV4HINT:
+      return ARES_OPT_DATATYPE_INADDR4_LIST;
+    case ARES_SVCB_PARAM_IPV6HINT:
+      return ARES_OPT_DATATYPE_INADDR6_LIST;
+  }
+  return ARES_OPT_DATATYPE_BIN;
+}
+
+ares_dns_opt_datatype_t ares_dns_opt_get_datatype(ares_dns_rr_key_t key,
+                                                  unsigned short    opt)
+{
+  switch (key) {
+    case ARES_RR_OPT_OPTIONS:
+      return ares_dns_opt_get_type_opt(opt);
+    case ARES_RR_SVCB_PARAMS:
+    case ARES_RR_HTTPS_PARAMS:
+      return ares_dns_opt_get_type_svcb(opt);
+    default:
+      break;
+  }
+  return ARES_OPT_DATATYPE_BIN;
+}
+
+static const char *ares_dns_opt_get_name_opt(unsigned short opt)
+{
+  ares_opt_param_t param = (ares_opt_param_t)opt;
+  switch (param) {
+    case ARES_OPT_PARAM_LLQ:
+      return "LLQ";
+    case ARES_OPT_PARAM_UL:
+      return "UL";
+    case ARES_OPT_PARAM_NSID:
+      return "NSID";
+    case ARES_OPT_PARAM_DAU:
+      return "DAU";
+    case ARES_OPT_PARAM_DHU:
+      return "DHU";
+    case ARES_OPT_PARAM_N3U:
+      return "N3U";
+    case ARES_OPT_PARAM_EDNS_CLIENT_SUBNET:
+      return "edns-client-subnet";
+    case ARES_OPT_PARAM_EDNS_EXPIRE:
+      return "edns-expire";
+    case ARES_OPT_PARAM_COOKIE:
+      return "COOKIE";
+    case ARES_OPT_PARAM_EDNS_TCP_KEEPALIVE:
+      return "edns-tcp-keepalive";
+    case ARES_OPT_PARAM_PADDING:
+      return "Padding";
+    case ARES_OPT_PARAM_CHAIN:
+      return "CHAIN";
+    case ARES_OPT_PARAM_EDNS_KEY_TAG:
+      return "edns-key-tag";
+    case ARES_OPT_PARAM_EXTENDED_DNS_ERROR:
+      return "extended-dns-error";
+  }
+  return NULL;
+}
+
+static const char *ares_dns_opt_get_name_svcb(unsigned short opt)
+{
+  ares_svcb_param_t param = (ares_svcb_param_t)opt;
+  switch (param) {
+    case ARES_SVCB_PARAM_NO_DEFAULT_ALPN:
+      return "no-default-alpn";
+    case ARES_SVCB_PARAM_ECH:
+      return "ech";
+    case ARES_SVCB_PARAM_MANDATORY:
+      return "mandatory";
+    case ARES_SVCB_PARAM_ALPN:
+      return "alpn";
+    case ARES_SVCB_PARAM_PORT:
+      return "port";
+    case ARES_SVCB_PARAM_IPV4HINT:
+      return "ipv4hint";
+    case ARES_SVCB_PARAM_IPV6HINT:
+      return "ipv6hint";
+  }
+  return NULL;
+}
+
+const char *ares_dns_opt_get_name(ares_dns_rr_key_t key, unsigned short opt)
+{
+  switch (key) {
+    case ARES_RR_OPT_OPTIONS:
+      return ares_dns_opt_get_name_opt(opt);
+    case ARES_RR_SVCB_PARAMS:
+    case ARES_RR_HTTPS_PARAMS:
+      return ares_dns_opt_get_name_svcb(opt);
+    default:
+      break;
+  }
+  return NULL;
+}
+
+const char *ares_dns_rcode_tostr(ares_dns_rcode_t rcode)
+{
+  switch (rcode) {
+    case ARES_RCODE_NOERROR:
+      return "NOERROR";
+    case ARES_RCODE_FORMERR:
+      return "FORMERR";
+    case ARES_RCODE_SERVFAIL:
+      return "SERVFAIL";
+    case ARES_RCODE_NXDOMAIN:
+      return "NXDOMAIN";
+    case ARES_RCODE_NOTIMP:
+      return "NOTIMP";
+    case ARES_RCODE_REFUSED:
+      return "REFUSED";
+    case ARES_RCODE_YXDOMAIN:
+      return "YXDOMAIN";
+    case ARES_RCODE_YXRRSET:
+      return "YXRRSET";
+    case ARES_RCODE_NXRRSET:
+      return "NXRRSET";
+    case ARES_RCODE_NOTAUTH:
+      return "NOTAUTH";
+    case ARES_RCODE_NOTZONE:
+      return "NOTZONE";
+    case ARES_RCODE_DSOTYPEI:
+      return "DSOTYPEI";
+    case ARES_RCODE_BADSIG:
+      return "BADSIG";
+    case ARES_RCODE_BADKEY:
+      return "BADKEY";
+    case ARES_RCODE_BADTIME:
+      return "BADTIME";
+    case ARES_RCODE_BADMODE:
+      return "BADMODE";
+    case ARES_RCODE_BADNAME:
+      return "BADNAME";
+    case ARES_RCODE_BADALG:
+      return "BADALG";
+    case ARES_RCODE_BADTRUNC:
+      return "BADTRUNC";
+    case ARES_RCODE_BADCOOKIE:
+      return "BADCOOKIE";
+  }
+
+  return "UNKNOWN";
 }

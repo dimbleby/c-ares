@@ -67,10 +67,10 @@ extern std::vector<std::pair<int, bool>>       families_modes;
 
 // Process all pending work on ares-owned file descriptors, plus
 // optionally the given set-of-FDs + work function.
-void                                           ProcessWork(ares_channel                   channel,
-                                                           std::function<std::set<int>()> get_extrafds,
-                                                           std::function<void(int)>       process_extra);
-std::set<int>                                  NoExtraFDs();
+void          ProcessWork(ares_channel_t                *channel,
+                          std::function<std::set<int>()> get_extrafds,
+                          std::function<void(int)>       process_extra);
+std::set<int> NoExtraFDs();
 
 // Test fixture that ensures library initialization, and allows
 // memory allocations to be failed.
@@ -126,7 +126,33 @@ public:
   void Process();
 
 protected:
-  ares_channel channel_;
+  ares_channel_t *channel_;
+};
+
+// Test fixture that uses a file-only channel.
+class FileChannelTest : public LibraryTest {
+public:
+  FileChannelTest() : channel_(nullptr)
+  {
+    struct ares_options opts = { 0 };
+    opts.lookups             = strdup("f");
+    int optmask              = ARES_OPT_LOOKUPS;
+    EXPECT_EQ(ARES_SUCCESS, ares_init_options(&channel_, &opts, optmask));
+    EXPECT_NE(nullptr, channel_);
+    free(opts.lookups);
+  }
+
+  ~FileChannelTest()
+  {
+    ares_destroy(channel_);
+    channel_ = nullptr;
+  }
+
+  // Process all pending work on ares-owned file descriptors.
+  void Process();
+
+protected:
+  ares_channel_t *channel_;
 };
 
 // Test fixture that uses a default channel with the specified lookup mode.
@@ -154,7 +180,7 @@ public:
   void Process();
 
 protected:
-  ares_channel channel_;
+  ares_channel_t *channel_;
 };
 
 // Mock DNS server to allow responses to be scripted by tests.
@@ -252,7 +278,7 @@ protected:
   NiceMockServers        servers_;
   // Convenience reference to first server.
   NiceMockServer        &server_;
-  ares_channel           channel_;
+  ares_channel_t        *channel_;
 };
 
 class MockChannelTest
@@ -409,7 +435,7 @@ void AddrInfoCallback(void *data, int status, int timeouts,
                       struct ares_addrinfo *res);
 
 // Retrieve the name servers used by a channel.
-std::vector<std::string> GetNameServers(ares_channel channel);
+std::vector<std::string> GetNameServers(ares_channel_t *channel);
 
 // RAII class to temporarily create a directory of a given name.
 class TransientDir {
@@ -572,7 +598,7 @@ public:
   static const ares_socket_functions default_functions;
 
 private:
-  ares_channel channel_;
+  ares_channel_t *channel_;
 };
 
 /*

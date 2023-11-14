@@ -17,16 +17,17 @@
 .\"
 .TH ARES_SET_SERVERS 3 "5 March 2010"
 .SH NAME
-ares_set_servers, ares_set_servers_ports \- Initialize an ares_channel name servers configuration
+ares_set_servers, ares_set_servers_ports \- Initialize name server configuration
+for an ares channel.
 .SH SYNOPSIS
 .nf
 #include <ares.h>
 
-int ares_set_servers(ares_channel \fIchannel\fP,
-                     struct ares_addr_node *\fIservers\fP)
+int ares_set_servers(ares_channel_t *\fIchannel\fP,
+                     const struct ares_addr_node *\fIservers\fP)
 
-int ares_set_servers_ports(ares_channel \fIchannel\fP,
-                           struct ares_addr_port_node *\fIservers\fP)
+int ares_set_servers_ports(ares_channel_t *\fIchannel\fP,
+                           const struct ares_addr_port_node *\fIservers\fP)
 .fi
 .SH DESCRIPTION
 The \fBares_set_servers(3)\fP function initializes name servers configuration
@@ -59,6 +60,10 @@ This function is capable of handling IPv4 and IPv6 name server
 addresses simultaneously, rendering \fBares_init_options(3)\fP with
 optmask \fBARES_OPT_SERVERS\fP functionally obsolete except for
 IPv4-only name server usage.
+.PP
+As of v1.22.0 this function can
+be called on an active channel with running queries, previously it would return
+ARES_ENOTIMP.
 
 .SH RETURN VALUES
 .B ares_set_servers(3)
@@ -77,9 +82,6 @@ was invalid.
 .TP 15
 .B ARES_ENOTINITIALIZED
 c-ares library initialization not yet performed.
-.TP 15
-.B ARES_ENOTIMP
-Changing name servers configuration while queries are outstanding is not implemented.
 .SH SEE ALSO
 .BR ares_set_servers_csv (3),
 .BR ares_get_servers (3),

@@ -20,10 +20,10 @@
 #############################################################
 AC_PREREQ([2.60])
 
-AC_INIT([c-ares], [1.21.0],
+AC_INIT([c-ares], [1.22.0],
   [c-ares mailing list: http://lists.haxx.se/listinfo/c-ares])
 
-CARES_VERSION_INFO="9:2:7"
+CARES_VERSION_INFO="10:0:8"
 dnl This flag accepts an argument of the form current[:revision[:age]]. So,
 dnl passing -version-info 3:12:1 sets current to 3, revision to 12, and age to
 dnl 1.
@@ -276,7 +276,7 @@ case X-"$ac_cv_native_windows" in
     CURL_CHECK_HEADER_WINSOCK
     CURL_CHECK_HEADER_WINSOCK2
     CURL_CHECK_HEADER_WS2TCPIP
-    CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0600"
+    CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0602"
     ;;
   *)
     ac_cv_header_winsock_h="no"
@@ -570,6 +570,7 @@ AC_CHECK_HEADERS(
        sys/param.h \
        sys/uio.h \
        assert.h \
+       iphlpapi.h \
        netdb.h \
        netinet/in.h \
        netinet/tcp.h \
@@ -744,7 +745,7 @@ CARES_CHECK_FUNC_STRNCMPI
 CARES_CHECK_FUNC_STRNICMP
 CARES_CHECK_FUNC_WRITEV
 CARES_CHECK_FUNC_ARC4RANDOM_BUF
-
+CARES_CHECK_FUNC_STAT
 
 dnl check for AF_INET6
 CARES_CHECK_CONSTANT(

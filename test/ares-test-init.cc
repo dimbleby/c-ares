@@ -17,6 +17,10 @@
  */
 #include "ares-test.h"
 
+extern "C" {
+  #include "ares_private.h"
+}
+
 // library initialization is only needed for windows builds
 #ifdef WIN32
 #define EXPECTED_NONINIT ARES_ENOTINITIALIZED
@@ -62,7 +66,7 @@ TEST(LibraryInit, Nested) {
 
 TEST(LibraryInit, BasicChannelInit) {
   EXPECT_EQ(ARES_SUCCESS, ares_library_init(ARES_LIB_INIT_ALL));
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
   EXPECT_NE(nullptr, channel);
   ares_destroy(channel);
@@ -81,6 +85,8 @@ TEST_F(LibraryTest, OptionsChannelInit) {
   opts.ndots = 4;
   optmask |= ARES_OPT_NDOTS;
   opts.udp_port = 54;
+  optmask |= ARES_OPT_MAXTIMEOUTMS;
+  opts.maxtimeout = 10000;
   optmask |= ARES_OPT_UDP_PORT;
   opts.tcp_port = 54;
   optmask |= ARES_OPT_TCP_PORT;
@@ -108,12 +114,13 @@ TEST_F(LibraryTest, OptionsChannelInit) {
   opts.hosts_path = strdup("/etc/hosts");
   optmask |= ARES_OPT_HOSTS_FILE;
 
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init_options(&channel, &opts, optmask));
   EXPECT_NE(nullptr, channel);
 
-  ares_channel channel2 = nullptr;
+  ares_channel_t *channel2 = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_dup(&channel2, channel));
+  EXPECT_NE(nullptr, channel2);
 
   struct ares_options opts2 = {0};
   int optmask2 = 0;
@@ -125,6 +132,7 @@ TEST_F(LibraryTest, OptionsChannelInit) {
   EXPECT_EQ(opts.timeout, opts2.timeout);
   EXPECT_EQ(opts.tries, opts2.tries);
   EXPECT_EQ(opts.ndots, opts2.ndots);
+  EXPECT_EQ(opts.maxtimeout, opts2.maxtimeout);
   EXPECT_EQ(opts.udp_port, opts2.udp_port);
   EXPECT_EQ(opts.tcp_port, opts2.tcp_port);
   EXPECT_EQ(1, opts2.nservers);  // Truncated by ARES_FLAG_PRIMARY
@@ -143,7 +151,7 @@ TEST_F(LibraryTest, OptionsChannelInit) {
 }
 
 TEST_F(LibraryTest, ChannelAllocFail) {
-  ares_channel channel;
+  ares_channel_t *channel;
   for (int ii = 1; ii <= 25; ii++) {
     ClearFails();
     SetAllocFail(ii);
@@ -197,7 +205,7 @@ TEST_F(LibraryTest, OptionsChannelAllocFail) {
   opts.hosts_path = strdup("/etc/hosts");
   optmask |= ARES_OPT_HOSTS_FILE;
 
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   for (int ii = 1; ii <= 8; ii++) {
     ClearFails();
     SetAllocFail(ii);
@@ -220,7 +228,7 @@ TEST_F(LibraryTest, OptionsChannelAllocFail) {
             ares_set_servers_csv(channel, "1.2.3.4,0102:0304:0506:0708:0910:1112:1314:1516,2.3.4.5"));
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel, "1.2.3.4 2.3.4.5"));
 
-  ares_channel channel2 = nullptr;
+  ares_channel_t *channel2 = nullptr;
   for (int ii = 1; ii <= 18; ii++) {
     ClearFails();
     SetAllocFail(ii);
@@ -249,7 +257,7 @@ TEST_F(LibraryTest, FailChannelInit) {
                                   &LibraryTest::afree,
                                   &LibraryTest::arealloc));
   SetAllocFail(1);
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_ENOMEM, ares_init(&channel));
   EXPECT_EQ(nullptr, channel);
   ares_library_cleanup();
@@ -257,7 +265,7 @@ TEST_F(LibraryTest, FailChannelInit) {
 
 #ifndef WIN32
 TEST_F(LibraryTest, EnvInit) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EnvValue v1("LOCALDOMAIN", "this.is.local");
   EnvValue v2("RES_OPTIONS", "options debug ndots:3 retry:3 rotate retrans:2");
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
@@ -265,7 +273,7 @@ TEST_F(LibraryTest, EnvInit) {
 }
 
 TEST_F(LibraryTest, EnvInitAllocFail) {
-  ares_channel channel;
+  ares_channel_t *channel;
   EnvValue v1("LOCALDOMAIN", "this.is.local");
   EnvValue v2("RES_OPTIONS", "options debug ndots:3 retry:3 rotate retrans:2");
   for (int ii = 1; ii <= 10; ii++) {
@@ -319,7 +327,7 @@ TEST_F(DefaultChannelTest, SetSortlistAllocFail) {
 
 #ifdef USE_WINSOCK
 TEST(Init, NoLibraryInit) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_ENOTINITIALIZED, ares_init(&channel));
 }
 #endif
@@ -359,19 +367,14 @@ NameContentList filelist = {
   {"/etc/nsswitch.conf", "hosts: files\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerChannelInit,
                  "myhostname", "mydomainname.org", filelist) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
   std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"1.2.3.4"};
+  std::vector<std::string> expected = {"1.2.3.4:53"};
   EXPECT_EQ(expected, actual);
-
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(2, opts.ndomains);
-  EXPECT_EQ(std::string("first.com"), std::string(opts.domains[0]));
-  EXPECT_EQ(std::string("second.com"), std::string(opts.domains[1]));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(2, channel->ndomains);
+  EXPECT_EQ(std::string("first.com"), std::string(channel->domains[0]));
+  EXPECT_EQ(std::string("second.com"), std::string(channel->domains[1]));
 
   HostResult result;
   ares_gethostbyname(channel, "ahostname.com", AF_INET, HostCallback, &result);
@@ -379,6 +382,7 @@ CONTAINED_TEST_F(LibraryTest, ContainerChannelInit,
   EXPECT_TRUE(result.done_);
   std::stringstream ss;
   ss << result.host_;
+
   EXPECT_EQ("{'ahostname.com' aliases=[] addrs=[3.4.5.6]}", ss.str());
 
   ares_destroy(channel);
@@ -387,7 +391,7 @@ CONTAINED_TEST_F(LibraryTest, ContainerChannelInit,
 
 CONTAINED_TEST_F(LibraryTest, ContainerSortlistOptionInit,
                  "myhostname", "mydomainname.org", filelist) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   struct ares_options opts = {0};
   int optmask = 0;
   optmask |= ARES_OPT_SORTLIST;
@@ -395,11 +399,9 @@ CONTAINED_TEST_F(LibraryTest, ContainerSortlistOptionInit,
   // Explicitly specifying an empty sortlist in the options should override the
   // environment.
   EXPECT_EQ(ARES_SUCCESS, ares_init_options(&channel, &opts, optmask));
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(0, opts.nsort);
-  EXPECT_EQ(nullptr, opts.sortlist);
-  EXPECT_EQ(ARES_OPT_SORTLIST, (optmask & ARES_OPT_SORTLIST));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(0, channel->nsort);
+  EXPECT_EQ(nullptr, channel->sortlist);
+  EXPECT_EQ(ARES_OPT_SORTLIST, (channel->optmask & ARES_OPT_SORTLIST));
 
   ares_destroy(channel);
   return HasFailure();
@@ -413,15 +415,11 @@ NameContentList fullresolv = {
                        "sortlist 1.2.3.4/16 2.3.4.5\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerFullResolvInit,
                  "myhostname", "mydomainname.org", fullresolv) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("b"), std::string(opts.lookups));
-  EXPECT_EQ(5, opts.ndots);
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("b"), std::string(channel->lookups));
+  EXPECT_EQ(5, channel->ndots);
 
   ares_destroy(channel);
   return HasFailure();
@@ -437,7 +435,7 @@ NameContentList myresolvconf = {
 CONTAINED_TEST_F(LibraryTest, ContainerMyResolvConfInit,
                  "myhostname", "mydomain.org", myresolvconf) {
   char filename[] = "/tmp/myresolv.cnf";
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   struct ares_options options = {0};
   options.resolvconf_path = strdup(filename);
   int optmask = ARES_OPT_RESOLVCONF;
@@ -463,7 +461,7 @@ NameContentList myhosts = {
 CONTAINED_TEST_F(LibraryTest, ContainerMyHostsInit,
                  "myhostname", "mydomain.org", myhosts) {
   char filename[] = "/tmp/hosts";
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   struct ares_options options = {0};
   options.hosts_path = strdup(filename);
   int optmask = ARES_OPT_HOSTS_FILE;
@@ -489,14 +487,10 @@ NameContentList hostconf = {
   {"/etc/host.conf", "order bind hosts\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerHostConfInit,
                  "myhostname", "mydomainname.org", hostconf) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("bf"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("bf"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();
@@ -508,14 +502,10 @@ NameContentList svcconf = {
   {"/etc/svc.conf", "hosts= bind\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerSvcConfInit,
                  "myhostname", "mydomainname.org", svcconf) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("b"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("b"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();
@@ -526,14 +516,10 @@ NameContentList malformedresolvconflookup = {
                        "lookup garbage\n"}};  // malformed line
 CONTAINED_TEST_F(LibraryTest, ContainerMalformedResolvConfLookup,
                  "myhostname", "mydomainname.org", malformedresolvconflookup) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("fb"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("fb"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();
@@ -553,7 +539,7 @@ class MakeUnreadable {
 
 CONTAINED_TEST_F(LibraryTest, ContainerResolvConfNotReadable,
                  "myhostname", "mydomainname.org", filelist) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   MakeUnreadable hide("/etc/resolv.conf");
   // Unavailable /etc/resolv.conf falls back to defaults
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
@@ -561,23 +547,19 @@ CONTAINED_TEST_F(LibraryTest, ContainerResolvConfNotReadable,
 }
 CONTAINED_TEST_F(LibraryTest, ContainerNsswitchConfNotReadable,
                  "myhostname", "mydomainname.org", filelist) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   // Unavailable /etc/nsswitch.conf falls back to defaults.
   MakeUnreadable hide("/etc/nsswitch.conf");
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("fb"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("fb"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();
 }
 CONTAINED_TEST_F(LibraryTest, ContainerHostConfNotReadable,
                  "myhostname", "mydomainname.org", hostconf) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   // Unavailable /etc/host.conf falls back to defaults.
   MakeUnreadable hide("/etc/host.conf");
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
@@ -586,7 +568,7 @@ CONTAINED_TEST_F(LibraryTest, ContainerHostConfNotReadable,
 }
 CONTAINED_TEST_F(LibraryTest, ContainerSvcConfNotReadable,
                  "myhostname", "mydomainname.org", svcconf) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   // Unavailable /etc/svc.conf falls back to defaults.
   MakeUnreadable hide("/etc/svc.conf");
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
@@ -600,14 +582,10 @@ NameContentList rotateenv = {
                        "options rotate\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerRotateInit,
                  "myhostname", "mydomainname.org", rotateenv) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(ARES_OPT_ROTATE, (optmask & ARES_OPT_ROTATE));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(ARES_TRUE, channel->rotate);
 
   ares_destroy(channel);
   return HasFailure();
@@ -615,11 +593,10 @@ CONTAINED_TEST_F(LibraryTest, ContainerRotateInit,
 
 CONTAINED_TEST_F(LibraryTest, ContainerRotateOverride,
                  "myhostname", "mydomainname.org", rotateenv) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   struct ares_options opts = {0};
   int optmask = ARES_OPT_NOROTATE;
   EXPECT_EQ(ARES_SUCCESS, ares_init_options(&channel, &opts, optmask));
-
   optmask = 0;
   ares_save_options(channel, &opts, &optmask);
   EXPECT_EQ(ARES_OPT_NOROTATE, (optmask & ARES_OPT_NOROTATE));
@@ -639,21 +616,17 @@ NameContentList blacklistedIpv6 = {
   {"/etc/nsswitch.conf", "hosts: files\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerBlacklistedIpv6,
                  "myhostname", "mydomainname.org", blacklistedIpv6) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
   std::vector<std::string> actual = GetNameServers(channel);
   std::vector<std::string> expected = {
-    "254.192.1.1",
-    "ffc0:0000:0000:0000:0000:0000:0000:c001"
+    "254.192.1.1:53",
+    "[ffc0:0000:0000:0000:0000:0000:0000:c001]:53"
   };
   EXPECT_EQ(expected, actual);
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(1, opts.ndomains);
-  EXPECT_EQ(std::string("first.com"), std::string(opts.domains[0]));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(1, channel->ndomains);
+  EXPECT_EQ(std::string("first.com"), std::string(channel->domains[0]));
 
   ares_destroy(channel);
   return HasFailure();
@@ -665,18 +638,14 @@ NameContentList multiresolv = {
   {"/etc/nsswitch.conf", "hosts: files\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerMultiResolvInit,
                  "myhostname", "mydomainname.org", multiresolv) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
   std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"0001:0000:0000:0000:0000:0000:0000:0002"};
+  std::vector<std::string> expected = {"[0001:0000:0000:0000:0000:0000:0000:0002]:53"};
   EXPECT_EQ(expected, actual);
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(1, opts.ndomains);
-  EXPECT_EQ(std::string("first.com"), std::string(opts.domains[0]));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(1, channel->ndomains);
+  EXPECT_EQ(std::string("first.com"), std::string(channel->domains[0]));
 
   ares_destroy(channel);
   return HasFailure();
@@ -688,14 +657,10 @@ NameContentList systemdresolv = {
   {"/etc/nsswitch.conf", "hosts: junk resolve files\n"}};
 CONTAINED_TEST_F(LibraryTest, ContainerSystemdResolvInit,
                  "myhostname", "mydomainname.org", systemdresolv) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(std::string("bf"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
+  EXPECT_EQ(std::string("bf"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();
@@ -704,20 +669,15 @@ CONTAINED_TEST_F(LibraryTest, ContainerSystemdResolvInit,
 NameContentList empty = {};  // no files
 CONTAINED_TEST_F(LibraryTest, ContainerEmptyInit,
                  "host.domain.org", "domain.org", empty) {
-  ares_channel channel = nullptr;
+  ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
   std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"127.0.0.1"};
+  std::vector<std::string> expected = {"127.0.0.1:53"};
   EXPECT_EQ(expected, actual);
 
-  struct ares_options opts;
-  int optmask = 0;
-  ares_save_options(channel, &opts, &optmask);
-  EXPECT_EQ(1, opts.ndomains);
-  EXPECT_EQ(std::string("domain.org"), std::string(opts.domains[0]));
-  EXPECT_EQ(std::string("fb"), std::string(opts.lookups));
-  ares_destroy_options(&opts);
-
+  EXPECT_EQ(1, channel->ndomains);
+  EXPECT_EQ(std::string("domain.org"), std::string(channel->domains[0]));
+  EXPECT_EQ(std::string("fb"), std::string(channel->lookups));
 
   ares_destroy(channel);
   return HasFailure();

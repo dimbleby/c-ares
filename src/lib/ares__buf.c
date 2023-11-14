@@ -45,6 +45,47 @@ struct ares__buf {
                                        *   SIZE_MAX if not set. */
 };
 
+ares_bool_t ares__isprint(int ch)
+{
+  if (ch >= 0x20 && ch <= 0x7E) {
+    return ARES_TRUE;
+  }
+  return ARES_FALSE;
+}
+
+/* Character set allowed by hostnames.  This is to include the normal
+ * domain name character set plus:
+ *  - underscores which are used in SRV records.
+ *  - Forward slashes such as are used for classless in-addr.arpa
+ *    delegation (CNAMEs)
+ *  - Asterisks may be used for wildcard domains in CNAMEs as seen in the
+ *    real world.
+ * While RFC 2181 section 11 does state not to do validation,
+ * that applies to servers, not clients.  Vulnerabilities have been
+ * reported when this validation is not performed.  Security is more
+ * important than edge-case compatibility (which is probably invalid
+ * anyhow). */
+ares_bool_t ares__is_hostnamech(int ch)
+{
+  /* [A-Za-z0-9-*._/]
+   * Don't use isalnum() as it is locale-specific
+   */
+  if (ch >= 'A' && ch <= 'Z') {
+    return ARES_TRUE;
+  }
+  if (ch >= 'a' && ch <= 'z') {
+    return ARES_TRUE;
+  }
+  if (ch >= '0' && ch <= '9') {
+    return ARES_TRUE;
+  }
+  if (ch == '-' || ch == '.' || ch == '_' || ch == '/' || ch == '*') {
+    return ARES_TRUE;
+  }
+
+  return ARES_FALSE;
+}
+
 ares__buf_t *ares__buf_create(void)
 {
   ares__buf_t *buf = ares_malloc_zero(sizeof(*buf));
@@ -192,6 +233,20 @@ static ares_status_t ares__buf_ensure_space(ares__buf_t *buf,
   return ARES_SUCCESS;
 }
 
+ares_status_t ares__buf_set_length(ares__buf_t *buf, size_t len)
+{
+  if (buf == NULL || ares__buf_is_const(buf)) {
+    return ARES_EFORMERR;
+  }
+
+  if (len >= buf->alloc_buf_len - buf->offset) {
+    return ARES_EFORMERR;
+  }
+
+  buf->data_len = len;
+  return ARES_SUCCESS;
+}
+
 ares_status_t ares__buf_append(ares__buf_t *buf, const unsigned char *data,
                                size_t data_len)
 {
@@ -214,6 +269,50 @@ ares_status_t ares__buf_append(ares__buf_t *buf, const unsigned char *data,
 ares_status_t ares__buf_append_byte(ares__buf_t *buf, unsigned char byte)
 {
   return ares__buf_append(buf, &byte, 1);
+}
+
+ares_status_t ares__buf_append_be16(ares__buf_t *buf, unsigned short u16)
+{
+  ares_status_t status;
+
+  status = ares__buf_append_byte(buf, (unsigned char)((u16 >> 8) & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  status = ares__buf_append_byte(buf, (unsigned char)(u16 & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  return ARES_SUCCESS;
+}
+
+ares_status_t ares__buf_append_be32(ares__buf_t *buf, unsigned int u32)
+{
+  ares_status_t status;
+
+  status = ares__buf_append_byte(buf, ((unsigned char)(u32 >> 24) & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  status = ares__buf_append_byte(buf, ((unsigned char)(u32 >> 16) & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  status = ares__buf_append_byte(buf, ((unsigned char)(u32 >> 8) & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  status = ares__buf_append_byte(buf, ((unsigned char)u32 & 0xff));
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  return ARES_SUCCESS;
 }
 
 unsigned char *ares__buf_append_start(ares__buf_t *buf, size_t *len)
@@ -324,6 +423,68 @@ const unsigned char *ares__buf_tag_fetch(const ares__buf_t *buf, size_t *len)
   return buf->data + buf->tag_offset;
 }
 
+size_t ares__buf_tag_length(const ares__buf_t *buf)
+{
+  if (buf == NULL || buf->tag_offset == SIZE_MAX) {
+    return 0;
+  }
+  return buf->offset - buf->tag_offset;
+}
+
+ares_status_t ares__buf_tag_fetch_bytes(const ares__buf_t *buf,
+                                        unsigned char *bytes, size_t *len)
+{
+  size_t               ptr_len = 0;
+  const unsigned char *ptr     = ares__buf_tag_fetch(buf, &ptr_len);
+
+  if (ptr == NULL || bytes == NULL || len == NULL) {
+    return ARES_EFORMERR;
+  }
+
+  if (*len < ptr_len) {
+    return ARES_EFORMERR;
+  }
+
+  *len = ptr_len;
+
+  if (ptr_len > 0) {
+    memcpy(bytes, ptr, ptr_len);
+  }
+  return ARES_SUCCESS;
+}
+
+ares_status_t ares__buf_tag_fetch_string(const ares__buf_t *buf, char *str,
+                                         size_t len)
+{
+  size_t        out_len;
+  ares_status_t status;
+  size_t        i;
+
+  if (str == NULL || len == 0) {
+    return ARES_EFORMERR;
+  }
+
+  /* Space for NULL terminator */
+  out_len = len - 1;
+
+  status = ares__buf_tag_fetch_bytes(buf, (unsigned char *)str, &out_len);
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  /* NULL terminate */
+  str[out_len] = 0;
+
+  /* Validate string is printable */
+  for (i = 0; i < out_len; i++) {
+    if (!ares__isprint(str[i])) {
+      return ARES_EBADSTR;
+    }
+  }
+
+  return ARES_SUCCESS;
+}
+
 static const unsigned char *ares__buf_fetch(const ares__buf_t *buf, size_t *len)
 {
   if (len != NULL) {
@@ -397,6 +558,7 @@ ares_status_t ares__buf_fetch_bytes(ares__buf_t *buf, unsigned char *bytes,
 }
 
 ares_status_t ares__buf_fetch_bytes_dup(ares__buf_t *buf, size_t len,
+                                        ares_bool_t     null_term,
                                         unsigned char **bytes)
 {
   size_t               remaining_len;
@@ -406,12 +568,15 @@ ares_status_t ares__buf_fetch_bytes_dup(ares__buf_t *buf, size_t len,
     return ARES_EBADRESP;
   }
 
-  *bytes = ares_malloc(len);
+  *bytes = ares_malloc(null_term ? len + 1 : len);
   if (*bytes == NULL) {
     return ARES_ENOMEM;
   }
 
   memcpy(*bytes, ptr, len);
+  if (null_term) {
+    (*bytes)[len] = 0;
+  }
   return ares__buf_consume(buf, len);
 }
 
@@ -454,135 +619,8 @@ ares_status_t ares__buf_fetch_bytes_into_buf(ares__buf_t *buf,
   return ares__buf_consume(buf, len);
 }
 
-/* Reserved characters for names that need to be escaped */
-static ares_bool_t is_reservedch(int ch)
-{
-  switch (ch) {
-    case '"':
-    case '.':
-    case ';':
-    case '\\':
-    case '(':
-    case ')':
-    case '@':
-    case '$':
-      return ARES_TRUE;
-    default:
-      break;
-  }
-
-  return ARES_FALSE;
-}
-
-static ares_bool_t ares__isprint(int ch)
-{
-  if (ch >= 0x20 && ch <= 0x7E) {
-    return ARES_TRUE;
-  }
-  return ARES_FALSE;
-}
-
-/* Character set allowed by hostnames.  This is to include the normal
- * domain name character set plus:
- *  - underscores which are used in SRV records.
- *  - Forward slashes such as are used for classless in-addr.arpa
- *    delegation (CNAMEs)
- *  - Asterisks may be used for wildcard domains in CNAMEs as seen in the
- *    real world.
- * While RFC 2181 section 11 does state not to do validation,
- * that applies to servers, not clients.  Vulnerabilities have been
- * reported when this validation is not performed.  Security is more
- * important than edge-case compatibility (which is probably invalid
- * anyhow). */
-static ares_bool_t is_hostnamech(int ch)
-{
-  /* [A-Za-z0-9-*._/]
-   * Don't use isalnum() as it is locale-specific
-   */
-  if (ch >= 'A' && ch <= 'Z') {
-    return ARES_TRUE;
-  }
-  if (ch >= 'a' && ch <= 'z') {
-    return ARES_TRUE;
-  }
-  if (ch >= '0' && ch <= '9') {
-    return ARES_TRUE;
-  }
-  if (ch == '-' || ch == '.' || ch == '_' || ch == '/' || ch == '*') {
-    return ARES_TRUE;
-  }
-
-  return ARES_FALSE;
-}
-
-static ares_status_t ares__buf_fetch_dnsname_into_buf(ares__buf_t *buf,
-                                                      ares__buf_t *dest,
-                                                      size_t       len,
-                                                      ares_bool_t  is_hostname)
-{
-  size_t               remaining_len;
-  const unsigned char *ptr = ares__buf_fetch(buf, &remaining_len);
-  ares_status_t        status;
-  size_t               i;
-
-  if (buf == NULL || len == 0 || remaining_len < len) {
-    return ARES_EBADRESP;
-  }
-
-  for (i = 0; i < len; i++) {
-    unsigned char c = ptr[i];
-
-    /* Hostnames have a very specific allowed character set.  Anything outside
-     * of that (non-printable and reserved included) are disallowed */
-    if (is_hostname && !is_hostnamech(c)) {
-      status = ARES_EBADRESP;
-      goto fail;
-    }
-
-    /* NOTE: dest may be NULL if the user is trying to skip the name. validation
-     *       still occurs above. */
-    if (dest == NULL) {
-      continue;
-    }
-
-    /* Non-printable characters need to be output as \DDD */
-    if (!ares__isprint(c)) {
-      unsigned char escape[4];
-
-      escape[0] = '\\';
-      escape[1] = '0' + (c / 100);
-      escape[2] = '0' + ((c % 100) / 10);
-      escape[3] = '0' + (c % 10);
-
-      status = ares__buf_append(dest, escape, sizeof(escape));
-      if (status != ARES_SUCCESS) {
-        goto fail;
-      }
-
-      continue;
-    }
-
-    /* Reserved characters need to be escaped, otherwise normal */
-    if (is_reservedch(c)) {
-      status = ares__buf_append_byte(dest, '\\');
-      if (status != ARES_SUCCESS) {
-        goto fail;
-      }
-    }
-
-    status = ares__buf_append_byte(dest, c);
-    if (status != ARES_SUCCESS) {
-      return status;
-    }
-  }
-
-  return ares__buf_consume(buf, len);
-
-fail:
-  return status;
-}
-
-size_t ares__buf_consume_whitespace(ares__buf_t *buf, int include_linefeed)
+size_t ares__buf_consume_whitespace(ares__buf_t *buf,
+                                    ares_bool_t  include_linefeed)
 {
   size_t               remaining_len = 0;
   const unsigned char *ptr           = ares__buf_fetch(buf, &remaining_len);
@@ -648,7 +686,7 @@ done:
   return i;
 }
 
-size_t ares__buf_consume_line(ares__buf_t *buf, int include_linefeed)
+size_t ares__buf_consume_line(ares__buf_t *buf, ares_bool_t include_linefeed)
 {
   size_t               remaining_len = 0;
   const unsigned char *ptr           = ares__buf_fetch(buf, &remaining_len);
@@ -665,9 +703,10 @@ size_t ares__buf_consume_line(ares__buf_t *buf, int include_linefeed)
   }
 
 done:
-  if (include_linefeed && i > 0 && i < remaining_len && ptr[i] == '\n') {
+  if (include_linefeed && i < remaining_len && ptr[i] == '\n') {
     i++;
   }
+
   if (i > 0) {
     ares__buf_consume(buf, i);
   }
@@ -729,161 +768,6 @@ ares_status_t ares__buf_set_position(ares__buf_t *buf, size_t idx)
   return ARES_SUCCESS;
 }
 
-#define ARES_DNS_HEADER_SIZE 12
-
-ares_status_t ares__buf_parse_dns_name(ares__buf_t *buf, char **name,
-                                       ares_bool_t is_hostname)
-{
-  size_t        save_offset = 0;
-  unsigned char c;
-  ares_status_t status;
-  ares__buf_t  *namebuf     = NULL;
-  size_t        label_start = ares__buf_get_position(buf);
-
-  if (buf == NULL) {
-    return ARES_EFORMERR;
-  }
-
-  if (name != NULL) {
-    namebuf = ares__buf_create();
-    if (namebuf == NULL) {
-      status = ARES_ENOMEM;
-      goto fail;
-    }
-  }
-
-  /* XXX: LibraryTest.ExpandName and LibraryTest.ExpandNameFailure are not
-   *      complete DNS messages but rather non-valid minimized snippets to try
-   *      to test the old parser, so we have to turn off this sanity check
-   *      it appears until these test cases are rewritten
-   */
-#if 0
-  if (ares__buf_get_position(buf) < ARES_DNS_HEADER_SIZE) {
-    status = ARES_EFORMERR;
-    goto fail;
-  }
-#endif
-  /* The compression scheme allows a domain name in a message to be
-   * represented as either:
-   *
-   * - a sequence of labels ending in a zero octet
-   * - a pointer
-   * - a sequence of labels ending with a pointer
-   */
-  while (1) {
-    /* Keep track of the minimum label starting position to prevent forward
-     * jumping */
-    if (label_start > ares__buf_get_position(buf)) {
-      label_start = ares__buf_get_position(buf);
-    }
-
-    status = ares__buf_fetch_bytes(buf, &c, 1);
-    if (status != ARES_SUCCESS) {
-      goto fail;
-    }
-
-    /* Pointer/Redirect */
-    if ((c & 0xc0) == 0xc0) {
-      /* The pointer takes the form of a two octet sequence:
-       *
-       *   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       *   | 1  1|                OFFSET                   |
-       *   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       *
-       * The first two bits are ones.  This allows a pointer to be distinguished
-       * from a label, since the label must begin with two zero bits because
-       * labels are restricted to 63 octets or less.  (The 10 and 01
-       * combinations are reserved for future use.)  The OFFSET field specifies
-       * an offset from the start of the message (i.e., the first octet of the
-       * ID field in the domain header).  A zero offset specifies the first byte
-       * of the ID field, etc.
-       */
-      size_t offset = (size_t)((c & 0x3F) << 8);
-
-      /* Fetch second byte of the redirect length */
-      status = ares__buf_fetch_bytes(buf, &c, 1);
-      if (status != ARES_SUCCESS) {
-        goto fail;
-      }
-
-      offset |= ((size_t)c);
-
-      /* According to RFC 1035 4.1.4:
-       *    In this scheme, an entire domain name or a list of labels at
-       *    the end of a domain name is replaced with a pointer to a prior
-       *    occurance of the same name.
-       * Note the word "prior", meaning it must go backwards.  This was
-       * confirmed via the ISC BIND code that it also prevents forward
-       * pointers.
-       */
-      if (offset >= label_start) {
-        status = ARES_EBADNAME;
-        goto fail;
-      }
-
-      /* First time we make a jump, save the current position */
-      if (save_offset == 0) {
-        save_offset = ares__buf_get_position(buf);
-      }
-
-      status = ares__buf_set_position(buf, offset);
-      if (status != ARES_SUCCESS) {
-        status = ARES_EBADNAME;
-        goto fail;
-      }
-
-      continue;
-    } else if ((c & 0xc0) != 0) {
-      /* 10 and 01 are reserved */
-      status = ARES_EBADNAME;
-      goto fail;
-    } else if (c == 0) {
-      /* termination via zero octet*/
-      break;
-    }
-
-    /* New label */
-
-    /* Labels are separated by periods */
-    if (ares__buf_len(namebuf) != 0 && name != NULL) {
-      status = ares__buf_append_byte(namebuf, '.');
-      if (status != ARES_SUCCESS) {
-        goto fail;
-      }
-    }
-
-    status = ares__buf_fetch_dnsname_into_buf(buf, namebuf, c, is_hostname);
-    if (status != ARES_SUCCESS) {
-      goto fail;
-    }
-  }
-
-  /* Restore offset read after first redirect/pointer as this is where the DNS
-   * message continues */
-  if (save_offset) {
-    ares__buf_set_position(buf, save_offset);
-  }
-
-  if (name != NULL) {
-    *name = ares__buf_finish_str(namebuf, NULL);
-    if (*name == NULL) {
-      status = ARES_ENOMEM;
-      goto fail;
-    }
-  }
-
-  return ARES_SUCCESS;
-
-fail:
-  /* We want badname response if we couldn't parse */
-  if (status == ARES_EBADRESP) {
-    status = ARES_EBADNAME;
-  }
-
-  ares__buf_destroy(namebuf);
-  return status;
-}
-
 ares_status_t ares__buf_parse_dns_binstr(ares__buf_t *buf, size_t remaining_len,
                                          unsigned char **bin, size_t *bin_len,
                                          ares_bool_t allow_multiple)
@@ -912,15 +796,16 @@ ares_status_t ares__buf_parse_dns_binstr(ares__buf_t *buf, size_t remaining_len,
       break;
     }
 
-    /* XXX: Maybe we should scan to make sure it is printable? */
-    if (bin != NULL) {
-      status = ares__buf_fetch_bytes_into_buf(buf, binbuf, len);
-    } else {
-      status = ares__buf_consume(buf, len);
-    }
-
-    if (status != ARES_SUCCESS) {
-      break;
+    if (len) {
+      /* XXX: Maybe we should scan to make sure it is printable? */
+      if (bin != NULL) {
+        status = ares__buf_fetch_bytes_into_buf(buf, binbuf, len);
+      } else {
+        status = ares__buf_consume(buf, len);
+      }
+      if (status != ARES_SUCCESS) {
+        break;
+      }
     }
 
     if (!allow_multiple) {
@@ -951,4 +836,124 @@ ares_status_t ares__buf_parse_dns_str(ares__buf_t *buf, size_t remaining_len,
   size_t len;
   return ares__buf_parse_dns_binstr(buf, remaining_len, (unsigned char **)str,
                                     &len, allow_multiple);
+}
+
+ares_status_t ares__buf_append_num_dec(ares__buf_t *buf, size_t num, size_t len)
+{
+  size_t i;
+  size_t mod;
+
+  if (len == 0) {
+    len = ares__count_digits(num);
+  }
+
+  mod = ares__pow(10, len);
+
+  for (i = len; i > 0; i--) {
+    size_t        digit = (num % mod);
+    ares_status_t status;
+
+    mod    /= 10;
+    digit  /= mod;
+    status  = ares__buf_append_byte(buf, '0' + (unsigned char)(digit & 0xFF));
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+  }
+  return ARES_SUCCESS;
+}
+
+ares_status_t ares__buf_append_num_hex(ares__buf_t *buf, size_t num, size_t len)
+{
+  size_t                     i;
+  static const unsigned char hexbytes[] = "0123456789ABCDEF";
+
+  if (len == 0) {
+    len = ares__count_hexdigits(num);
+  }
+
+  for (i = len; i > 0; i--) {
+    ares_status_t status;
+    status = ares__buf_append_byte(buf, hexbytes[(num >> ((i - 1) * 4)) & 0xF]);
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+  }
+  return ARES_SUCCESS;
+}
+
+static ares_status_t ares__buf_append_str(ares__buf_t *buf, const char *str)
+{
+  return ares__buf_append(buf, (const unsigned char *)str, ares_strlen(str));
+}
+
+static ares_status_t ares__buf_hexdump_line(ares__buf_t *buf, size_t idx,
+                                            const unsigned char *data,
+                                            size_t               len)
+{
+  size_t        i;
+  ares_status_t status;
+
+  /* Address */
+  status = ares__buf_append_num_hex(buf, idx, 6);
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  /* | */
+  status = ares__buf_append_str(buf, " | ");
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  for (i = 0; i < 16; i++) {
+    if (i >= len) {
+      status = ares__buf_append_str(buf, "  ");
+    } else {
+      status = ares__buf_append_num_hex(buf, data[i], 2);
+    }
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+
+    status = ares__buf_append_byte(buf, ' ');
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+  }
+
+  /* | */
+  status = ares__buf_append_str(buf, " | ");
+  if (status != ARES_SUCCESS) {
+    return status;
+  }
+
+  for (i = 0; i < 16; i++) {
+    if (i >= len) {
+      break;
+    }
+    status = ares__buf_append_byte(buf, ares__isprint(data[i]) ? data[i] : '.');
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+  }
+
+  return ares__buf_append_byte(buf, '\n');
+}
+
+ares_status_t ares__buf_hexdump(ares__buf_t *buf, const unsigned char *data,
+                                size_t len)
+{
+  size_t i;
+
+  /* Each line is 16 bytes */
+  for (i = 0; i < len; i += 16) {
+    ares_status_t status;
+    status = ares__buf_hexdump_line(buf, i, data + i, len - i);
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
+  }
+
+  return ARES_SUCCESS;
 }

@@ -90,6 +90,57 @@ ares_status_t  ares__buf_append(ares__buf_t *buf, const unsigned char *data,
  */
 ares_status_t  ares__buf_append_byte(ares__buf_t *buf, unsigned char byte);
 
+/*! Append a 16bit Big Endian number to the buffer.
+ *
+ *  \param[in]  buf     Initialized buffer object
+ *  \param[out] u16     16bit integer
+ *  \return ARES_SUCCESS or one of the c-ares error codes
+ */
+ares_status_t  ares__buf_append_be16(ares__buf_t *buf, unsigned short u16);
+
+/*! Append a 32bit Big Endian number to the buffer.
+ *
+ *  \param[in]  buf     Initialized buffer object
+ *  \param[out] u32     32bit integer
+ *  \return ARES_SUCCESS or one of the c-ares error codes
+ */
+ares_status_t  ares__buf_append_be32(ares__buf_t *buf, unsigned int u32);
+
+/*! Append a number in ASCII decimal form.
+ *
+ *  \param[in] buf  Initialized buffer object
+ *  \param[in] num  Number to print
+ *  \param[in] len  Length to output, use 0 for no padding
+ *  \return ARES_SUCCESS on succeess
+ */
+ares_status_t  ares__buf_append_num_dec(ares__buf_t *buf, size_t num,
+                                        size_t len);
+
+/*! Append a number in ASCII hexidecimal form.
+ *
+ *  \param[in] buf  Initialized buffer object
+ *  \param[in] num  Number to print
+ *  \param[in] len  Length to output, use 0 for no padding
+ *  \return ARES_SUCCESS on succeess
+ */
+ares_status_t  ares__buf_append_num_hex(ares__buf_t *buf, size_t num,
+                                        size_t len);
+
+/*! Sets the current buffer length.  This *may* be used if there is a need to
+ *  override a prior position in the buffer, such as if there is a length
+ *  prefix that isn't easily predictable, and you must go back and overwrite
+ *  that position.
+ *
+ *  Only valid on non-const buffers.  Length provided must not exceed current
+ *  allocated buffer size, but otherwise there are very few protections on
+ *  this function.  Use cautiously.
+ *
+ *  \param[in]  buf  Initialized buffer object
+ *  \param[in]  len  Length to set
+ *  \return ARES_SUCCESS or one of the c-ares error codes
+ */
+ares_status_t  ares__buf_set_length(ares__buf_t *buf, size_t len);
+
 
 /*! Start a dynamic append operation that returns a buffer suitable for
  *  writing.  A desired minimum length is passed in, and the actual allocated
@@ -113,6 +164,16 @@ unsigned char *ares__buf_append_start(ares__buf_t *buf, size_t *len);
  *                    ares__buf_append_start().
  */
 void           ares__buf_append_finish(ares__buf_t *buf, size_t len);
+
+/*! Write the data provided to the buffer in a hexdump format.
+ *
+ *  \param[in] buf      Initialized buffer object.
+ *  \param[in] data     Data to hex dump
+ *  \param[in] data_len Length of data to hexdump
+ *  \return ARES_SUCCESS on success.
+ */
+ares_status_t  ares__buf_hexdump(ares__buf_t *buf, const unsigned char *data,
+                                 size_t len);
 
 /*! Clean up ares__buf_t and return allocated pointer to unprocessed data.  It
  *  is the responsibility of the  caller to ares_free() the returned buffer.
@@ -176,13 +237,47 @@ ares_status_t  ares__buf_tag_clear(ares__buf_t *buf);
  */
 const unsigned char *ares__buf_tag_fetch(const ares__buf_t *buf, size_t *len);
 
+/*! Get the length of the current tag offset to the current position.
+ *
+ *  \param[in]  buf    Initialized buffer object
+ *  \return length
+ */
+size_t               ares__buf_tag_length(const ares__buf_t *buf);
+
+/*! Fetch the bytes starting from the tagged position up to the _current_
+ *  position using the provided buffer.  It will not unset the tagged position.
+ *
+ *  \param[in]     buf    Initialized buffer object
+ *  \param[in,out] bytes  Buffer to hold data
+ *  \param[in,out] len    On input, buffer size, on output, bytes place in
+ *                        buffer.
+ *  \return ARES_SUCCESS if fetched, ARES_EFORMERR if insufficient buffer size
+ */
+ares_status_t        ares__buf_tag_fetch_bytes(const ares__buf_t *buf,
+                                               unsigned char *bytes, size_t *len);
+
+/*! Fetch the bytes starting from the tagged position up to the _current_
+ *  position as a NULL-terminated string using the provided buffer.  The data
+ *  is validated to be ASCII-printable data.  It will not unset the tagged
+ *  poition.
+ *
+ *  \param[in]     buf    Initialized buffer object
+ *  \param[in,out] str    Buffer to hold data
+ *  \param[in]     len    On input, buffer size, on output, bytes place in
+ *                        buffer.
+ *  \return ARES_SUCCESS if fetched, ARES_EFORMERR if insufficient buffer size,
+ *          ARES_EBADSTR if not printable ASCII
+ */
+ares_status_t ares__buf_tag_fetch_string(const ares__buf_t *buf, char *str,
+                                         size_t len);
+
 /*! Consume the given number of bytes without reading them.
  *
  *  \param[in] buf    Initialized buffer object
  *  \param[in] len    Length to consume
  *  \return ARES_SUCCESS or one of the c-ares error codes
  */
-ares_status_t        ares__buf_consume(ares__buf_t *buf, size_t len);
+ares_status_t ares__buf_consume(ares__buf_t *buf, size_t len);
 
 /*! Fetch a 16bit Big Endian number from the buffer.
  *
@@ -215,12 +310,16 @@ ares_status_t ares__buf_fetch_bytes(ares__buf_t *buf, unsigned char *bytes,
 /*! Fetch the requested number of bytes and return a new buffer that must be
  *  ares_free()'d by the caller.
  *
- *  \param[in]  buf     Initialized buffer object
- *  \param[in]  len     Requested number of bytes (must be > 0)
- *  \param[out] bytes   Pointer passed by reference. Will be allocated.
+ *  \param[in]  buf       Initialized buffer object
+ *  \param[in]  len       Requested number of bytes (must be > 0)
+ *  \param[in]  null_term Even though this is considered binary data, the user
+ *                        knows it may be a vald string, so add a null
+ *                        terminator.
+ *  \param[out] bytes     Pointer passed by reference. Will be allocated.
  *  \return ARES_SUCCESS or one of the c-ares error codes
  */
 ares_status_t ares__buf_fetch_bytes_dup(ares__buf_t *buf, size_t len,
+                                        ares_bool_t     null_term,
                                         unsigned char **bytes);
 
 /*! Fetch the requested number of bytes and place them into the provided
@@ -249,10 +348,12 @@ ares_status_t ares__buf_fetch_str_dup(ares__buf_t *buf, size_t len, char **str);
  *  0x0A).
  *
  *  \param[in]  buf               Initialized buffer object
- *  \param[in]  include_linefeed  1 to include consuming 0x0A, 0 otherwise.
+ *  \param[in]  include_linefeed  ARES_TRUE to include consuming 0x0A,
+ *                                ARES_FALSE otherwise.
  *  \return number of whitespace characters consumed
  */
-size_t ares__buf_consume_whitespace(ares__buf_t *buf, int include_linefeed);
+size_t        ares__buf_consume_whitespace(ares__buf_t *buf,
+                                           ares_bool_t  include_linefeed);
 
 
 /*! Consume any non-whitespace character (anything other than 0x09, 0x0B, 0x0C,
@@ -261,16 +362,17 @@ size_t ares__buf_consume_whitespace(ares__buf_t *buf, int include_linefeed);
  *  \param[in]  buf               Initialized buffer object
  *  \return number of characters consumed
  */
-size_t ares__buf_consume_nonwhitespace(ares__buf_t *buf);
+size_t        ares__buf_consume_nonwhitespace(ares__buf_t *buf);
 
 /*! Consume from the current position until the end of the line, and optionally
  *  the end of line character (0x0A) itself.
  *
  *  \param[in]  buf               Initialized buffer object
- *  \param[in]  include_linefeed  1 to include consuming 0x0A, 0 otherwise.
+ *  \param[in]  include_linefeed  ARES_TRUE to include consuming 0x0A,
+ *                                ARES_FALSE otherwise.
  *  \return number of characters consumed
  */
-size_t ares__buf_consume_line(ares__buf_t *buf, int include_linefeed);
+size_t ares__buf_consume_line(ares__buf_t *buf, ares_bool_t include_linefeed);
 
 
 /*! Check the unprocessed buffer to see if it begins with the sequence of
@@ -355,24 +457,6 @@ ares_status_t        ares__buf_set_position(ares__buf_t *buf, size_t idx);
  */
 size_t               ares__buf_get_position(const ares__buf_t *buf);
 
-
-/*! Parse a compressed DNS name as defined in RFC1035 starting at the current
- *  offset within the buffer.
- *
- *  It is assumed that either a const buffer is being used, or before
- *  the message processing was started that ares__buf_reclaim() was called.
- *
- *  \param[in]  buf        Initialized buffer object
- *  \param[out] name       Pointer passed by reference to be filled in with
- *                         allocated string of the parsed name that must be
- *                         ares_free()'d by the caller.
- *  \param[in] is_hostname if ARES_TRUE, will validate the character set for
- *                         a valid hostname or will return error.
- *  \return ARES_SUCCESS on success
- */
-ares_status_t        ares__buf_parse_dns_name(ares__buf_t *buf, char **name,
-                                              ares_bool_t is_hostname);
-
 /*! Parse a character-string as defined in RFC1035, as a null-terminated
  *  string.
  *
@@ -392,8 +476,8 @@ ares_status_t ares__buf_parse_dns_str(ares__buf_t *buf, size_t remaining_len,
                                       char **name, ares_bool_t allow_multiple);
 
 /*! Parse a character-string as defined in RFC1035, as binary, however for
- *  convenience this does guarantee a NULL terminator (that is not included)
- *  in the returned length.
+ *  convenience this does guarantee a NULL terminator (that is not included
+ *  in the returned length).
  *
  *  \param[in]  buf            initialized buffer object
  *  \param[in]  remaining_len  maximum length that should be used for parsing
