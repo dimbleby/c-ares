@@ -151,6 +151,12 @@ void ares__buf_reclaim(ares__buf_t *buf)
     return;
   }
 
+  /* Silence coverity.  All lengths are zero so would bail out later but
+   * coverity doesn't know this */
+  if (buf->alloc_buf == NULL) {
+    return;
+  }
+
   if (buf->tag_offset != SIZE_MAX && buf->tag_offset < buf->offset) {
     prefix_size = buf->tag_offset;
   } else {
@@ -517,13 +523,16 @@ ares_status_t ares__buf_fetch_be16(ares__buf_t *buf, unsigned short *u16)
 {
   size_t               remaining_len;
   const unsigned char *ptr = ares__buf_fetch(buf, &remaining_len);
+  unsigned int         u32;
 
   if (buf == NULL || u16 == NULL || remaining_len < sizeof(*u16)) {
     return ARES_EBADRESP;
   }
 
-  *u16 =
-    (unsigned short)((unsigned short)(ptr[0]) << 8 | (unsigned short)ptr[1]);
+  /* Do math in an unsigned int in order to prevent warnings due to automatic
+   * conversion by the compiler from short to int during shifts */
+  u32  = ((unsigned int)(ptr[0]) << 8 | (unsigned int)ptr[1]);
+  *u16 = (unsigned short)(u32 & 0xFFFF);
 
   return ares__buf_consume(buf, sizeof(*u16));
 }
@@ -854,6 +863,12 @@ ares_status_t ares__buf_append_num_dec(ares__buf_t *buf, size_t num, size_t len)
     ares_status_t status;
 
     mod    /= 10;
+
+    /* Silence coverity.  Shouldn't be possible since we calculate it above */
+    if (mod == 0) {
+      return ARES_EFORMERR;
+    }
+
     digit  /= mod;
     status  = ares__buf_append_byte(buf, '0' + (unsigned char)(digit & 0xFF));
     if (status != ARES_SUCCESS) {
@@ -882,7 +897,7 @@ ares_status_t ares__buf_append_num_hex(ares__buf_t *buf, size_t num, size_t len)
   return ARES_SUCCESS;
 }
 
-static ares_status_t ares__buf_append_str(ares__buf_t *buf, const char *str)
+ares_status_t ares__buf_append_str(ares__buf_t *buf, const char *str)
 {
   return ares__buf_append(buf, (const unsigned char *)str, ares_strlen(str));
 }

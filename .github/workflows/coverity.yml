@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: "0 10 * * 1" # Mondays at 00:10 UTC
   push:
-    branches: [ main, coverity_scan ]
+    branches: [ coverity_scan ]
   workflow_dispatch:
 jobs:
   build:
@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DCARES_BUILD_TESTS=ON -G Ninja ..
+          cmake -DCARES_BUILD_TESTS=OFF -G Ninja ..
       - name: Build with cov-build
         run: |
           export PATH=`pwd`/cov-analysis-linux64/bin:$PATH
