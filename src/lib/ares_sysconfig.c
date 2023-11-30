@@ -58,7 +58,12 @@
 #endif
 
 #if defined(USE_WINSOCK)
-#  include <iphlpapi.h>
+#  if defined(HAVE_IPHLPAPI_H)
+#    include <iphlpapi.h>
+#  endif
+#  if defined(HAVE_NETIOAPI_H)
+#    include <netioapi.h>
+#  endif
 #endif
 
 #include "ares.h"
@@ -115,7 +120,7 @@ static ares_bool_t get_REG_SZ(HKEY hKey, const char *leafKeyName, char **outptr)
     return ARES_FALSE;
   }
 
-  /* Null terminate buffer allways */
+  /* Null terminate buffer always */
   *(*outptr + size) = '\0';
 
   return ARES_TRUE;
@@ -337,7 +342,7 @@ static ares_bool_t get_DNS_Windows(char **outptr)
     return ARES_FALSE;
   }
 
-  /* Usually this call suceeds with initial buffer size */
+  /* Usually this call succeeds with initial buffer size */
   res = GetAdaptersAddresses(AF_UNSPEC, AddrFlags, NULL, ipaa, &ReqBufsz);
   if ((res != ERROR_BUFFER_OVERFLOW) && (res != ERROR_SUCCESS)) {
     goto done;
@@ -990,11 +995,6 @@ ares_status_t ares__init_by_sysconfig(ares_channel_t *channel)
 
   memset(&sysconfig, 0, sizeof(sysconfig));
 
-  status = ares__init_by_environment(&sysconfig);
-  if (status != ARES_SUCCESS) {
-    goto done;
-  }
-
 #ifdef _WIN32
   status = ares__init_sysconfig_windows(&sysconfig);
 #elif defined(__MVS__)
@@ -1011,6 +1011,12 @@ ares_status_t ares__init_by_sysconfig(ares_channel_t *channel)
   status = ares__init_sysconfig_files(channel, &sysconfig);
 #endif
 
+  if (status != ARES_SUCCESS) {
+    goto done;
+  }
+
+  /* Environment is supposed to override sysconfig */
+  status = ares__init_by_environment(&sysconfig);
   if (status != ARES_SUCCESS) {
     goto done;
   }

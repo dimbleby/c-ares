@@ -28,7 +28,7 @@
 #ifdef HAVE_GETSERVBYPORT_R
 #  if !defined(GETSERVBYPORT_R_ARGS) || (GETSERVBYPORT_R_ARGS < 4) || \
     (GETSERVBYPORT_R_ARGS > 6)
-#    error "you MUST specifiy a valid number of arguments for getservbyport_r"
+#    error "you MUST specify a valid number of arguments for getservbyport_r"
 #  endif
 #endif
 
@@ -47,7 +47,7 @@
 #ifdef HAVE_NET_IF_H
 #  include <net/if.h>
 #endif
-#ifdef HAVE_IPHLPAPI_H
+#if defined(USE_WINSOCK) && defined(HAVE_IPHLPAPI_H)
 #  include <iphlpapi.h>
 #endif
 
@@ -86,9 +86,10 @@ static void append_scopeid(const struct sockaddr_in6 *addr6,
 #endif
 STATIC_TESTABLE char *ares_striendstr(const char *s1, const char *s2);
 
-void ares_getnameinfo(ares_channel_t *channel, const struct sockaddr *sa,
-                      ares_socklen_t salen, int flags_int,
-                      ares_nameinfo_callback callback, void *arg)
+static void           ares_getnameinfo_int(ares_channel_t        *channel,
+                                           const struct sockaddr *sa,
+                                           ares_socklen_t salen, int flags_int,
+                                           ares_nameinfo_callback callback, void *arg)
 {
   const struct sockaddr_in  *addr  = NULL;
   const struct sockaddr_in6 *addr6 = NULL;
@@ -183,6 +184,19 @@ void ares_getnameinfo(ares_channel_t *channel, const struct sockaddr *sa,
       }
     }
   }
+}
+
+void ares_getnameinfo(ares_channel_t *channel, const struct sockaddr *sa,
+                      ares_socklen_t salen, int flags_int,
+                      ares_nameinfo_callback callback, void *arg)
+{
+  if (channel == NULL) {
+    return;
+  }
+
+  ares__channel_lock(channel);
+  ares_getnameinfo_int(channel, sa, salen, flags_int, callback, arg);
+  ares__channel_unlock(channel);
 }
 
 static void nameinfo_callback(void *arg, int status, int timeouts,

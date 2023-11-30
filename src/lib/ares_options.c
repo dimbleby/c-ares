@@ -131,10 +131,10 @@ int ares_save_options(const ares_channel_t *channel,
   }
 
   if (channel->optmask & ARES_OPT_UDP_PORT) {
-    options->udp_port = ntohs(channel->udp_port);
+    options->udp_port = channel->udp_port;
   }
   if (channel->optmask & ARES_OPT_TCP_PORT) {
-    options->tcp_port = ntohs(channel->tcp_port);
+    options->tcp_port = channel->tcp_port;
   }
 
   if (channel->optmask & ARES_OPT_SOCK_STATE_CB) {
@@ -221,6 +221,10 @@ int ares_save_options(const ares_channel_t *channel,
     options->udp_max_queries = (int)channel->udp_max_queries;
   }
 
+  if (channel->optmask & ARES_OPT_QUERY_CACHE) {
+    options->qcache_max_ttl = channel->qcache_max_ttl;
+  }
+
   *optmask = (int)channel->optmask;
 
   return ARES_SUCCESS;
@@ -230,12 +234,12 @@ static ares_status_t ares__init_options_servers(ares_channel_t       *channel,
                                                 const struct in_addr *servers,
                                                 size_t                nservers)
 {
-  ares__llist_t *slist;
+  ares__llist_t *slist = NULL;
   ares_status_t  status;
 
-  slist = ares_in_addr_to_server_config_llist(servers, nservers);
-  if (slist == NULL) {
-    return ARES_ENOMEM;
+  status = ares_in_addr_to_server_config_llist(servers, nservers, &slist);
+  if (status != ARES_SUCCESS) {
+    return status;
   }
 
   status = ares__servers_update(channel, slist, ARES_TRUE);
@@ -297,11 +301,11 @@ ares_status_t ares__init_by_options(ares_channel_t            *channel,
   }
 
   if (optmask & ARES_OPT_UDP_PORT) {
-    channel->udp_port = htons(options->udp_port);
+    channel->udp_port = options->udp_port;
   }
 
   if (optmask & ARES_OPT_TCP_PORT) {
-    channel->tcp_port = htons(options->tcp_port);
+    channel->tcp_port = options->tcp_port;
   }
 
   if (optmask & ARES_OPT_SOCK_STATE_CB) {
@@ -379,6 +383,10 @@ ares_status_t ares__init_by_options(ares_channel_t            *channel,
 
   if (optmask & ARES_OPT_UDP_MAX_QUERIES) {
     channel->udp_max_queries = (size_t)options->udp_max_queries;
+  }
+
+  if (optmask & ARES_OPT_QUERY_CACHE) {
+    channel->qcache_max_ttl = options->qcache_max_ttl;
   }
 
   /* Initialize the ipv4 servers if provided */

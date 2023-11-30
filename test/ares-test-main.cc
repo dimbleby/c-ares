@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
       ares::test::verbose = true;
     } else if ((strcmp(argv[ii], "-p") == 0) && (ii + 1 < argc)) {
       ii++;
-      ares::test::mock_port = atoi(argv[ii]);
+      ares::test::mock_port = (unsigned short)atoi(argv[ii]);
     } else if (strcmp(argv[ii], "-4") == 0) {
       ares::test::families = ares::test::ipv4_family;
       ares::test::families_modes = ares::test::ipv4_family_both_modes;
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
       gtest_argv.push_back(argv[ii]);
     }
   }
-  int gtest_argc = gtest_argv.size();
+  int gtest_argc = (int)gtest_argv.size();
   gtest_argv.push_back(nullptr);
   ::testing::InitGoogleTest(&gtest_argc, gtest_argv.data());
 

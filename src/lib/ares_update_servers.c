@@ -531,10 +531,15 @@ ares_status_t ares__servers_update(ares_channel_t *channel,
   size_t              idx = 0;
   ares_status_t       status;
 
-  if (channel == NULL || server_list == NULL ||
-      ares__llist_len(server_list) == 0) {
+  if (channel == NULL) {
     return ARES_EFORMERR;
   }
+
+  ares__channel_lock(channel);
+
+  /* NOTE: a NULL or zero entry server list is considered valid due to
+   *       real-world people needing support for this for their test harnesses
+   */
 
   /* Add new entries */
   for (node = ares__llist_node_first(server_list); node != NULL;
@@ -579,25 +584,29 @@ ares_status_t ares__servers_update(ares_channel_t *channel,
     /* Save servers as if they were passed in as an option */
     channel->optmask |= ARES_OPT_SERVERS;
   }
+
+  /* Clear any cached query results */
+  ares__qcache_flush(channel->qcache);
+
   status = ARES_SUCCESS;
 
 done:
+  ares__channel_unlock(channel);
   return status;
 }
 
-static ares__llist_t *
-  ares_addr_node_to_server_config_llist(const struct ares_addr_node *servers)
+static ares_status_t
+  ares_addr_node_to_server_config_llist(const struct ares_addr_node *servers,
+                                        ares__llist_t              **llist)
 {
   const struct ares_addr_node *node;
   ares__llist_t               *s;
 
-  if (servers == NULL) {
-    return NULL;
-  }
+  *llist = NULL;
 
   s = ares__llist_create(ares_free);
   if (s == NULL) {
-    return NULL;
+    goto fail;
   }
 
   for (node = servers; node != NULL; node = node->next) {
@@ -628,26 +637,25 @@ static ares__llist_t *
     }
   }
 
-  return s;
+  *llist = s;
+  return ARES_SUCCESS;
 
 fail:
   ares__llist_destroy(s);
-  return NULL;
+  return ARES_ENOMEM;
 }
 
-static ares__llist_t *ares_addr_port_node_to_server_config_llist(
-  const struct ares_addr_port_node *servers)
+static ares_status_t ares_addr_port_node_to_server_config_llist(
+  const struct ares_addr_port_node *servers, ares__llist_t **llist)
 {
   const struct ares_addr_port_node *node;
   ares__llist_t                    *s;
 
-  if (servers == NULL) {
-    return NULL;
-  }
+  *llist = NULL;
 
   s = ares__llist_create(ares_free);
   if (s == NULL) {
-    return NULL;
+    goto fail;
   }
 
   for (node = servers; node != NULL; node = node->next) {
@@ -681,30 +689,29 @@ static ares__llist_t *ares_addr_port_node_to_server_config_llist(
     }
   }
 
-  return s;
+  *llist = s;
+  return ARES_SUCCESS;
 
 fail:
   ares__llist_destroy(s);
-  return NULL;
+  return ARES_ENOMEM;
 }
 
-ares__llist_t *
-  ares_in_addr_to_server_config_llist(const struct in_addr *servers,
-                                      size_t                nservers)
+ares_status_t ares_in_addr_to_server_config_llist(const struct in_addr *servers,
+                                                  size_t          nservers,
+                                                  ares__llist_t **llist)
 {
   size_t         i;
   ares__llist_t *s;
 
-  if (servers == NULL || nservers == 0) {
-    return NULL;
-  }
+  *llist = NULL;
 
   s = ares__llist_create(ares_free);
   if (s == NULL) {
-    return NULL;
+    goto fail;
   }
 
-  for (i = 0; i < nservers; i++) {
+  for (i = 0; servers != NULL && i < nservers; i++) {
     ares_sconfig_t *sconfig;
 
     sconfig = ares_malloc_zero(sizeof(*sconfig));
@@ -721,11 +728,12 @@ ares__llist_t *
     }
   }
 
-  return s;
+  *llist = s;
+  return ARES_SUCCESS;
 
 fail:
   ares__llist_destroy(s);
-  return NULL;
+  return ARES_ENOMEM;
 }
 
 int ares_get_servers(const ares_channel_t   *channel,
@@ -737,9 +745,11 @@ int ares_get_servers(const ares_channel_t   *channel,
   ares_status_t          status = ARES_SUCCESS;
   ares__slist_node_t    *node;
 
-  if (!channel) {
+  if (channel == NULL) {
     return ARES_ENODATA;
   }
+
+  ares__channel_lock(channel);
 
   for (node = ares__slist_node_first(channel->servers); node != NULL;
        node = ares__slist_node_next(node)) {
@@ -776,6 +786,8 @@ int ares_get_servers(const ares_channel_t   *channel,
 
   *servers = srvr_head;
 
+  ares__channel_unlock(channel);
+
   return (int)status;
 }
 
@@ -788,9 +800,11 @@ int ares_get_servers_ports(const ares_channel_t        *channel,
   ares_status_t               status = ARES_SUCCESS;
   ares__slist_node_t         *node;
 
-  if (!channel) {
+  if (channel == NULL) {
     return ARES_ENODATA;
   }
+
+  ares__channel_lock(channel);
 
   for (node = ares__slist_node_first(channel->servers); node != NULL;
        node = ares__slist_node_next(node)) {
@@ -830,6 +844,7 @@ int ares_get_servers_ports(const ares_channel_t        *channel,
 
   *servers = srvr_head;
 
+  ares__channel_unlock(channel);
   return (int)status;
 }
 
@@ -839,15 +854,16 @@ int ares_set_servers(ares_channel_t              *channel,
   ares__llist_t *slist;
   ares_status_t  status;
 
-  if (channel == NULL || servers == NULL) {
+  if (channel == NULL) {
     return ARES_ENODATA;
   }
 
-  slist = ares_addr_node_to_server_config_llist(servers);
-  if (slist == NULL) {
-    return ARES_ENOMEM;
+  status = ares_addr_node_to_server_config_llist(servers, &slist);
+  if (status != ARES_SUCCESS) {
+    return (int)status;
   }
 
+  /* NOTE: lock is in ares__servers_update() */
   status = ares__servers_update(channel, slist, ARES_TRUE);
 
   ares__llist_destroy(slist);
@@ -861,15 +877,16 @@ int ares_set_servers_ports(ares_channel_t                   *channel,
   ares__llist_t *slist;
   ares_status_t  status;
 
-  if (channel == NULL || servers == NULL) {
+  if (channel == NULL) {
     return ARES_ENODATA;
   }
 
-  slist = ares_addr_port_node_to_server_config_llist(servers);
-  if (slist == NULL) {
-    return ARES_ENOMEM;
+  status = ares_addr_port_node_to_server_config_llist(servers, &slist);
+  if (status != ARES_SUCCESS) {
+    return (int)status;
   }
 
+  /* NOTE: lock is in ares__servers_update() */
   status = ares__servers_update(channel, slist, ARES_TRUE);
 
   ares__llist_destroy(slist);
@@ -877,7 +894,7 @@ int ares_set_servers_ports(ares_channel_t                   *channel,
   return (int)status;
 }
 
-/* Incomming string format: host[:port][,host[:port]]... */
+/* Incoming string format: host[:port][,host[:port]]... */
 /* IPv6 addresses with ports require square brackets [fe80::1]:53 */
 static ares_status_t set_servers_csv(ares_channel_t *channel, const char *_csv,
                                      int use_port)
@@ -899,9 +916,12 @@ static ares_status_t set_servers_csv(ares_channel_t *channel, const char *_csv,
     return ARES_ENODATA;
   }
 
+  /* NOTE: lock is in ares__servers_update() */
+
   i = ares_strlen(_csv);
   if (i == 0) {
-    return ARES_SUCCESS; /* blank all servers */
+    /* blank all servers */
+    return (ares_status_t)ares_set_servers_ports(channel, NULL);
   }
 
   csv = ares_malloc(i + 2);
@@ -1029,10 +1049,12 @@ out:
 
 int ares_set_servers_csv(ares_channel_t *channel, const char *_csv)
 {
+  /* NOTE: lock is in ares__servers_update() */
   return (int)set_servers_csv(channel, _csv, ARES_FALSE);
 }
 
 int ares_set_servers_ports_csv(ares_channel_t *channel, const char *_csv)
 {
+  /* NOTE: lock is in ares__servers_update() */
   return (int)set_servers_csv(channel, _csv, ARES_TRUE);
 }

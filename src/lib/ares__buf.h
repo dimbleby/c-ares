@@ -96,7 +96,7 @@ ares_status_t  ares__buf_append_byte(ares__buf_t *buf, unsigned char byte);
  *  \param[in] str      String to append to buffer object.
  *  \return ARES_SUCCESS or one of the c-ares error codes
  */
-ares_status_t ares__buf_append_str(ares__buf_t *buf, const char *str);
+ares_status_t  ares__buf_append_str(ares__buf_t *buf, const char *str);
 
 /*! Append a 16bit Big Endian number to the buffer.
  *
@@ -119,17 +119,17 @@ ares_status_t  ares__buf_append_be32(ares__buf_t *buf, unsigned int u32);
  *  \param[in] buf  Initialized buffer object
  *  \param[in] num  Number to print
  *  \param[in] len  Length to output, use 0 for no padding
- *  \return ARES_SUCCESS on succeess
+ *  \return ARES_SUCCESS on success
  */
 ares_status_t  ares__buf_append_num_dec(ares__buf_t *buf, size_t num,
                                         size_t len);
 
-/*! Append a number in ASCII hexidecimal form.
+/*! Append a number in ASCII hexadecimal form.
  *
  *  \param[in] buf  Initialized buffer object
  *  \param[in] num  Number to print
  *  \param[in] len  Length to output, use 0 for no padding
- *  \return ARES_SUCCESS on succeess
+ *  \return ARES_SUCCESS on success
  */
 ares_status_t  ares__buf_append_num_hex(ares__buf_t *buf, size_t num,
                                         size_t len);

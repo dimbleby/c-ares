@@ -182,6 +182,9 @@
 /* Define to 1 if you have iphlpapi.h */
 #cmakedefine HAVE_IPHLPAPI_H
 
+/* Define to 1 if you have netioapi.h */
+#cmakedefine HAVE_NETIOAPI_H
+
 /* Define to 1 if you have the <limits.h> header file. */
 #cmakedefine HAVE_LIMITS_H
 
@@ -445,4 +448,16 @@
 
 /* Type to use in place of in_addr_t when system does not provide it. */
 #undef in_addr_t
+
+/* Define to 1 if you have the pthread.h header file. */
+#cmakedefine HAVE_PTHREAD_H
+
+/* Define to 1 if you have the pthread_np.h header file. */
+#cmakedefine HAVE_PTHREAD_NP_H
+
+/* Define to 1 if threads are enabled */
+#cmakedefine CARES_THREADS
+
+/* Define to 1 if pthread_init() exists */
+#cmakedefine HAVE_PTHREAD_INIT
 

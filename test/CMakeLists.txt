@@ -1,10 +1,10 @@
 # Copyright (C) The c-ares project and its contributors
 # SPDX-License-Identifier: MIT
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
-set(CMAKE_CXX_EXTENSIONS FALSE)
 
-enable_language(CXX)
+# Get rid of: warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+IF (MSVC)
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
+ENDIF ()
 
 find_package(Threads)
 
@@ -35,7 +35,6 @@ add_library(gmock STATIC
 )
 target_include_directories(gmock PUBLIC SYSTEM ${GMOCK_DIR})
 target_link_libraries(gmock PRIVATE ${CMAKE_THREAD_LIBS_INIT})
-
 # test targets
 
 transform_makefile_inc("Makefile.inc" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake")

@@ -57,8 +57,9 @@ static void search_callback(void *arg, int status, int timeouts,
 static void end_squery(struct search_query *squery, ares_status_t status,
                        unsigned char *abuf, size_t alen);
 
-void        ares_search(ares_channel_t *channel, const char *name, int dnsclass,
-                        int type, ares_callback callback, void *arg)
+static void ares_search_int(ares_channel_t *channel, const char *name,
+                            int dnsclass, int type, ares_callback callback,
+                            void *arg)
 {
   struct search_query *squery;
   char                *s;
@@ -157,6 +158,17 @@ void        ares_search(ares_channel_t *channel, const char *name, int dnsclass,
   }
 }
 
+void ares_search(ares_channel_t *channel, const char *name, int dnsclass,
+                 int type, ares_callback callback, void *arg)
+{
+  if (channel == NULL) {
+    return;
+  }
+  ares__channel_lock(channel);
+  ares_search_int(channel, name, dnsclass, type, callback, arg);
+  ares__channel_unlock(channel);
+}
+
 static void search_callback(void *arg, int status, int timeouts,
                             unsigned char *abuf, int alen)
 {
@@ -240,7 +252,7 @@ ares_status_t ares__cat_domain(const char *name, const char *domain, char **s)
   (*s)[nlen] = '.';
   if (strcmp(domain, ".") == 0) {
     /* Avoid appending the root domain to the separator, which would set *s to
-       an ill-formed value (ending in two consequtive dots). */
+       an ill-formed value (ending in two consecutive dots). */
     dlen = 0;
   }
   memcpy(*s + nlen + 1, domain, dlen);

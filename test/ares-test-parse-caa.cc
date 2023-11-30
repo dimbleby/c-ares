@@ -41,7 +41,7 @@ TEST_F(LibraryTest, ParseCaaReplyMultipleOK) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_SUCCESS, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_SUCCESS, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_NE(nullptr, caa);
   ASSERT_NE(nullptr, caa->next);
   ASSERT_NE(nullptr, caa->next->next);
@@ -59,13 +59,13 @@ TEST_F(LibraryTest, ParseCaaReplySingleOK) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_SUCCESS, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_SUCCESS, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_NE(nullptr, caa);
 
-  EXPECT_EQ(caa->critical, 0);
-  EXPECT_EQ(caa->plength, 5);
+  EXPECT_EQ(caa->critical, (int)0);
+  EXPECT_EQ(caa->plength, (size_t)5);
   EXPECT_STREQ((char *)caa->property, "issue");
-  EXPECT_EQ(caa->length, 8);
+  EXPECT_EQ(caa->length, (size_t)8);
   EXPECT_STREQ((char *)caa->value, "pki.goog");
 
   ares_free_data(caa);
@@ -80,7 +80,7 @@ TEST_F(LibraryTest, ParseCaaBogusReply1) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_EQ(nullptr, caa);
 }
 
@@ -93,7 +93,7 @@ TEST_F(LibraryTest, ParseCaaBogusReply2) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_EQ(nullptr, caa);
 }
 
@@ -106,7 +106,7 @@ TEST_F(LibraryTest, ParseCaaBogusReply3) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_EBADRESP, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_EQ(nullptr, caa);
 }
 
@@ -122,7 +122,7 @@ TEST_F(LibraryTest, ParseCaaEmptyReply) {
   };
 
   struct ares_caa_reply* caa = nullptr;
-  EXPECT_EQ(ARES_ENODATA, ares_parse_caa_reply(data.data(), data.size(), &caa));
+  EXPECT_EQ(ARES_ENODATA, ares_parse_caa_reply(data.data(), (int)data.size(), &caa));
   ASSERT_EQ(nullptr, caa);
 }
 

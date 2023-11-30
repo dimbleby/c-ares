@@ -20,10 +20,10 @@
 #############################################################
 AC_PREREQ([2.60])
 
-AC_INIT([c-ares], [1.22.1],
+AC_INIT([c-ares], [1.23.0],
   [c-ares mailing list: http://lists.haxx.se/listinfo/c-ares])
 
-CARES_VERSION_INFO="10:1:8"
+CARES_VERSION_INFO="11:0:9"
 dnl This flag accepts an argument of the form current[:revision[:age]]. So,
 dnl passing -version-info 3:12:1 sets current to 3, revision to 12, and age to
 dnl 1.
@@ -476,6 +476,7 @@ AS_IF([test "x$host_vendor" = "xapple"], [
   AC_COMPILE_IFELSE([
     AC_LANG_PROGRAM([[
 #include <stdio.h>
+#include <AvailabilityMacros.h>
 #include <TargetConditionals.h>
     ]], [[
 #if TARGET_OS_IPHONE == 0 || __IPHONE_OS_VERSION_MIN_REQUIRED < 100000
@@ -497,6 +498,7 @@ AS_IF([test "x$host_vendor" = "xapple"], [
   AC_COMPILE_IFELSE([
     AC_LANG_PROGRAM([[
 #include <stdio.h>
+#include <AvailabilityMacros.h>
 #include <TargetConditionals.h>
     ]], [[
 #ifndef MAC_OS_X_VERSION_10_12
@@ -571,6 +573,7 @@ AC_CHECK_HEADERS(
        sys/uio.h \
        assert.h \
        iphlpapi.h \
+       netioapi.h \
        netdb.h \
        netinet/in.h \
        netinet/tcp.h \
@@ -950,7 +953,7 @@ AC_C_BIGENDIAN(
     [AC_DEFINE(ARES_BIG_ENDIAN, 1,
       [define this if ares is built for a big endian system])],
     ,
-    [AC_MSG_WARN([couldn't figure out endianess, assuming little endian!])]
+    [AC_MSG_WARN([couldn't figure out endianness, assuming little endian!])]
 )
 
 dnl Check for user-specified random device
@@ -968,6 +971,33 @@ fi
 
 CARES_CHECK_OPTION_NONBLOCKING
 CARES_CHECK_NONBLOCKING_SOCKET
+
+
+dnl ------------ THREADING --------------
+AC_ARG_ENABLE(cares-threads,
+  AC_HELP_STRING([--disable-cares-threads], [Disable building of thread safety support]),
+  [ CARES_THREADS=${enableval} ],
+  [ CARES_THREADS=yes ])
+
+dnl windows always supports threads, only check non-windows systems.
+if test "${CARES_THREADS}" = "yes" -a "x${ac_cv_native_windows}" != "xyes" ; then
+  AX_PTHREAD([ ], [
+    AC_MSG_WARN([threads requested but not supported])
+    CARES_THREADS=no
+  ])
+
+  if test "${CARES_THREADS}" = "yes" ; then
+    AC_CHECK_HEADERS([pthread.h pthread_np.h])
+    LIBS="$PTHREAD_LIBS $LIBS"
+    CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+    CC="$PTHREAD_CC"
+    CXX="$PTHREAD_CXX"
+  fi
+fi
+
+if test "${CARES_THREADS}" = "yes" ; then
+  AC_DEFINE([CARES_THREADS], [ 1 ], [Threading enabled])
+fi
 
 CARES_CONFIGURE_SYMBOL_HIDING
 

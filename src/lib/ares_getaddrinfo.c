@@ -31,7 +31,7 @@
 #ifdef HAVE_GETSERVBYNAME_R
 #  if !defined(GETSERVBYNAME_R_ARGS) || (GETSERVBYNAME_R_ARGS < 4) || \
     (GETSERVBYNAME_R_ARGS > 6)
-#    error "you MUST specifiy a valid number of arguments for getservbyname_r"
+#    error "you MUST specify a valid number of arguments for getservbyname_r"
 #  endif
 #endif
 
@@ -238,7 +238,7 @@ static unsigned short lookup_service(const char *service, int flags)
   return 0;
 }
 
-/* If the name looks like an IP address or an error occured,
+/* If the name looks like an IP address or an error occurred,
  * fake up a host entry, end the query immediately, and return true.
  * Otherwise return false.
  */
@@ -532,10 +532,10 @@ static void host_callback(void *arg, int status, int timeouts,
   /* at this point we keep on waiting for the next query to finish */
 }
 
-void ares_getaddrinfo(ares_channel_t *channel, const char *name,
-                      const char                       *service,
-                      const struct ares_addrinfo_hints *hints,
-                      ares_addrinfo_callback callback, void *arg)
+static void ares_getaddrinfo_int(ares_channel_t *channel, const char *name,
+                                 const char                       *service,
+                                 const struct ares_addrinfo_hints *hints,
+                                 ares_addrinfo_callback callback, void *arg)
 {
   struct host_query    *hquery;
   unsigned short        port = 0;
@@ -668,6 +668,19 @@ void ares_getaddrinfo(ares_channel_t *channel, const char *name,
   next_lookup(hquery, ARES_ECONNREFUSED /* initial error code */);
 }
 
+void ares_getaddrinfo(ares_channel_t *channel, const char *name,
+                      const char                       *service,
+                      const struct ares_addrinfo_hints *hints,
+                      ares_addrinfo_callback callback, void *arg)
+{
+  if (channel == NULL) {
+    return;
+  }
+  ares__channel_lock(channel);
+  ares_getaddrinfo_int(channel, name, service, hints, callback, arg);
+  ares__channel_unlock(channel);
+}
+
 static ares_bool_t next_dns_lookup(struct host_query *hquery)
 {
   char         *s              = NULL;
@@ -737,13 +750,12 @@ static ares_bool_t as_is_first(const struct host_query *hquery)
 {
   const char *p;
   size_t      ndots = 0;
-  size_t      nname = ares_strlen(hquery->name);
   for (p = hquery->name; p && *p; p++) {
     if (*p == '.') {
       ndots++;
     }
   }
-  if (hquery->name != NULL && nname && hquery->name[nname - 1] == '.') {
+  if (as_is_only(hquery)) {
     /* prevent ARES_EBADNAME for valid FQDN, where ndots < channel->ndots  */
     return ARES_TRUE;
   }
@@ -753,6 +765,9 @@ static ares_bool_t as_is_first(const struct host_query *hquery)
 static ares_bool_t as_is_only(const struct host_query *hquery)
 {
   size_t nname = ares_strlen(hquery->name);
+  if (hquery->channel->flags & ARES_FLAG_NOSEARCH) {
+    return ARES_TRUE;
+  }
   if (hquery->name != NULL && nname && hquery->name[nname - 1] == '.') {
     return ARES_TRUE;
   }

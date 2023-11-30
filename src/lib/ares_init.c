@@ -57,7 +57,7 @@
 #  include <resolv.h>
 #endif
 
-#if defined(USE_WINSOCK)
+#if defined(USE_WINSOCK) && defined(HAVE_IPHLPAPI_H)
 #  include <iphlpapi.h>
 #endif
 
@@ -302,6 +302,11 @@ int ares_init_options(ares_channel_t           **channelptr,
     return ARES_ENOMEM;
   }
 
+  status = ares__channel_threading_init(channel);
+  if (status != ARES_SUCCESS) {
+    goto done;
+  }
+
   /* Generate random key */
   channel->rand_state = ares__init_rand_state();
   if (channel->rand_state == NULL) {
@@ -358,6 +363,14 @@ int ares_init_options(ares_channel_t           **channelptr,
     goto done;
   }
 
+  if (channel->qcache_max_ttl > 0) {
+    status = ares__qcache_create(channel->rand_state, channel->qcache_max_ttl,
+                                 &channel->qcache);
+    if (status != ARES_SUCCESS) {
+      goto done;
+    }
+  }
+
   if (status == ARES_SUCCESS) {
     status = ares__init_by_sysconfig(channel);
     if (status != ARES_SUCCESS) {
@@ -394,11 +407,21 @@ ares_status_t ares_reinit(ares_channel_t *channel)
     return ARES_EFORMERR;
   }
 
+  ares__channel_lock(channel);
+
   status = ares__init_by_sysconfig(channel);
   if (status != ARES_SUCCESS) {
     DEBUGF(fprintf(stderr, "Error: init_by_sysconfig failed: %s\n",
                    ares_strerror(status)));
   }
+
+  /* Flush cached queries on reinit */
+  if (channel->qcache) {
+    ares__qcache_flush(channel->qcache);
+  }
+
+  ares__channel_unlock(channel);
+
   return status;
 }
 
@@ -411,14 +434,19 @@ int ares_dup(ares_channel_t **dest, const ares_channel_t *src)
   ares_status_t               rc;
   int                         optmask;
 
+  if (dest == NULL || src == NULL) {
+    return ARES_EFORMERR;
+  }
+
   *dest = NULL; /* in case of failure return NULL explicitly */
 
+  ares__channel_lock(src);
   /* First get the options supported by the old ares_save_options() function,
      which is most of them */
   rc = (ares_status_t)ares_save_options(src, &opts, &optmask);
   if (rc != ARES_SUCCESS) {
     ares_destroy_options(&opts);
-    return (int)rc;
+    goto done;
   }
 
   /* Then create the new channel with those options */
@@ -428,7 +456,7 @@ int ares_dup(ares_channel_t **dest, const ares_channel_t *src)
   ares_destroy_options(&opts);
 
   if (rc != ARES_SUCCESS) {
-    return (int)rc;
+    goto done;
   }
 
   /* Now clone the options that ares_save_options() doesn't support, but are
@@ -459,7 +487,7 @@ int ares_dup(ares_channel_t **dest, const ares_channel_t *src)
     if (rc != ARES_SUCCESS) {
       ares_destroy(*dest);
       *dest = NULL;
-      return (int)rc;
+      goto done;
     }
 
     rc = (ares_status_t)ares_set_servers_ports(*dest, servers);
@@ -467,30 +495,49 @@ int ares_dup(ares_channel_t **dest, const ares_channel_t *src)
     if (rc != ARES_SUCCESS) {
       ares_destroy(*dest);
       *dest = NULL;
-      return (int)rc;
+      goto done;
     }
   }
 
-  return ARES_SUCCESS; /* everything went fine */
+  rc = ARES_SUCCESS;
+done:
+  ares__channel_unlock(src);
+  return (int)rc; /* everything went fine */
 }
 
 void ares_set_local_ip4(ares_channel_t *channel, unsigned int local_ip)
 {
+  if (channel == NULL) {
+    return;
+  }
+  ares__channel_lock(channel);
   channel->local_ip4 = local_ip;
+  ares__channel_unlock(channel);
 }
 
 /* local_ip6 should be 16 bytes in length */
 void ares_set_local_ip6(ares_channel_t *channel, const unsigned char *local_ip6)
 {
+  if (channel == NULL) {
+    return;
+  }
+  ares__channel_lock(channel);
   memcpy(&channel->local_ip6, local_ip6, sizeof(channel->local_ip6));
+  ares__channel_unlock(channel);
 }
 
 /* local_dev_name should be null terminated. */
 void ares_set_local_dev(ares_channel_t *channel, const char *local_dev_name)
 {
+  if (channel == NULL) {
+    return;
+  }
+
+  ares__channel_lock(channel);
   ares_strcpy(channel->local_dev_name, local_dev_name,
               sizeof(channel->local_dev_name));
   channel->local_dev_name[sizeof(channel->local_dev_name) - 1] = 0;
+  ares__channel_unlock(channel);
 }
 
 int ares_set_sortlist(ares_channel_t *channel, const char *sortstr)
@@ -502,6 +549,7 @@ int ares_set_sortlist(ares_channel_t *channel, const char *sortstr)
   if (!channel) {
     return ARES_ENODATA;
   }
+  ares__channel_lock(channel);
 
   status = ares__parse_sortlist(&sortlist, &nsort, sortstr);
   if (status == ARES_SUCCESS && sortlist) {
@@ -514,5 +562,6 @@ int ares_set_sortlist(ares_channel_t *channel, const char *sortstr)
     /* Save sortlist as if it was passed in as an option */
     channel->optmask |= ARES_OPT_SORTLIST;
   }
+  ares__channel_unlock(channel);
   return (int)status;
 }

@@ -172,8 +172,8 @@ struct server_state {
                                               * can be hard errors or timeouts
                                               */
   struct ares_addr          addr;
-  unsigned short            udp_port;
-  unsigned short            tcp_port;
+  unsigned short            udp_port;        /* host byte order */
+  unsigned short            tcp_port;        /* host byte order */
 
   ares__llist_t            *connections;
   struct server_connection *tcp_conn;
@@ -243,60 +243,70 @@ struct apattern {
   unsigned short type;
 };
 
+struct ares__qcache;
+typedef struct ares__qcache ares__qcache_t;
+
 struct ares_hosts_file;
 typedef struct ares_hosts_file ares_hosts_file_t;
 
+struct ares__thread_mutex;
+typedef struct ares__thread_mutex ares__thread_mutex_t;
+
 struct ares_channeldata {
   /* Configuration data */
-  unsigned int         flags;
-  size_t               timeout; /* in milliseconds */
-  size_t               tries;
-  size_t               ndots;
-  size_t               maxtimeout;                 /* in milliseconds */
-  ares_bool_t          rotate;
-  unsigned short       udp_port;                   /* stored in network order */
-  unsigned short       tcp_port;                   /* stored in network order */
-  int                  socket_send_buffer_size;    /* setsockopt takes int */
-  int                  socket_receive_buffer_size; /* setsockopt takes int */
-  char               **domains;
-  size_t               ndomains;
-  struct apattern     *sortlist;
-  size_t               nsort;
-  char                *lookups;
-  size_t               ednspsz;
-  unsigned int         optmask;
+  unsigned int          flags;
+  size_t                timeout; /* in milliseconds */
+  size_t                tries;
+  size_t                ndots;
+  size_t                maxtimeout;              /* in milliseconds */
+  ares_bool_t           rotate;
+  unsigned short        udp_port;                /* stored in network order */
+  unsigned short        tcp_port;                /* stored in network order */
+  int                   socket_send_buffer_size; /* setsockopt takes int */
+  int                   socket_receive_buffer_size; /* setsockopt takes int */
+  char                **domains;
+  size_t                ndomains;
+  struct apattern      *sortlist;
+  size_t                nsort;
+  char                 *lookups;
+  size_t                ednspsz;
+  unsigned int          qcache_max_ttl;
+  unsigned int          optmask;
 
   /* For binding to local devices and/or IP addresses.  Leave
    * them null/zero for no binding.
    */
-  char                 local_dev_name[32];
-  unsigned int         local_ip4;
-  unsigned char        local_ip6[16];
+  char                  local_dev_name[32];
+  unsigned int          local_ip4;
+  unsigned char         local_ip6[16];
+
+  /* Thread safety lock */
+  ares__thread_mutex_t *lock;
 
   /* Server addresses and communications state. Sorted by least consecutive
    * failures, followed by the configuration order if failures are equal. */
-  ares__slist_t       *servers;
+  ares__slist_t        *servers;
 
   /* random state to use when generating new ids and generating retry penalties
    */
-  ares_rand_state     *rand_state;
+  ares_rand_state      *rand_state;
 
   /* All active queries in a single list */
-  ares__llist_t       *all_queries;
+  ares__llist_t        *all_queries;
   /* Queries bucketed by qid, for quickly dispatching DNS responses: */
-  ares__htable_szvp_t *queries_by_qid;
+  ares__htable_szvp_t  *queries_by_qid;
 
   /* Queries bucketed by timeout, for quickly handling timeouts: */
-  ares__slist_t       *queries_by_timeout;
+  ares__slist_t        *queries_by_timeout;
 
   /* Map linked list node member for connection to file descriptor.  We use
    * the node instead of the connection object itself so we can quickly look
    * up a connection and remove it if necessary (as otherwise we'd have to
    * scan all connections) */
-  ares__htable_asvp_t *connnode_by_socket;
+  ares__htable_asvp_t  *connnode_by_socket;
 
-  ares_sock_state_cb   sock_state_cb;
-  void                *sock_state_cb_data;
+  ares_sock_state_cb    sock_state_cb;
+  void                 *sock_state_cb_data;
 
   ares_sock_create_callback           sock_create_cb;
   void                               *sock_create_cb_data;
@@ -318,6 +328,9 @@ struct ares_channeldata {
 
   /* Cache of local hosts file */
   ares_hosts_file_t                  *hf;
+
+  /* Query Cache */
+  ares__qcache_t                     *qcache;
 };
 
 /* Does the domain end in ".onion" or ".onion."? Case-insensitive. */
@@ -470,9 +483,9 @@ ares_status_t ares__sconfig_append(ares__llist_t         **sconfig,
                                    unsigned short          tcp_port);
 ares_status_t ares__sconfig_append_fromstr(ares__llist_t **sconfig,
                                            const char     *str);
-ares__llist_t *
-  ares_in_addr_to_server_config_llist(const struct in_addr *servers,
-                                      size_t                nservers);
+ares_status_t ares_in_addr_to_server_config_llist(const struct in_addr *servers,
+                                                  size_t          nservers,
+                                                  ares__llist_t **llist);
 
 struct ares_hosts_entry;
 typedef struct ares_hosts_entry ares_hosts_entry_t;
@@ -551,19 +564,36 @@ ares_status_t ares__dns_name_write(ares__buf_t *buf, ares__llist_t **list,
   (x && x->lookups && ares__slist_len(x->servers) > 0 && x->ndots > 0 && \
    x->timeout > 0 && x->tries > 0)
 
-size_t ares__round_up_pow2(size_t n);
-size_t ares__log2(size_t n);
-size_t ares__pow(size_t x, size_t y);
-size_t ares__count_digits(size_t n);
-size_t ares__count_hexdigits(size_t n);
+size_t        ares__round_up_pow2(size_t n);
+size_t        ares__log2(size_t n);
+size_t        ares__pow(size_t x, size_t y);
+size_t        ares__count_digits(size_t n);
+size_t        ares__count_hexdigits(size_t n);
+void          ares__qcache_destroy(ares__qcache_t *cache);
+ares_status_t ares__qcache_create(ares_rand_state *rand_state,
+                                  unsigned int     max_ttl,
+                                  ares__qcache_t **cache_out);
+void          ares__qcache_flush(ares__qcache_t *cache);
+ares_status_t ares_qcache_insert(ares_channel_t       *channel,
+                                 const struct timeval *now,
+                                 const struct query   *query,
+                                 ares_dns_record_t    *dnsrec);
+ares_status_t ares_qcache_fetch(ares_channel_t       *channel,
+                                const struct timeval *now,
+                                const unsigned char *qbuf, size_t qlen,
+                                unsigned char **abuf, size_t *alen);
 
+ares_status_t ares__channel_threading_init(ares_channel_t *channel);
+void          ares__channel_threading_destroy(ares_channel_t *channel);
+void          ares__channel_lock(ares_channel_t *channel);
+void          ares__channel_unlock(ares_channel_t *channel);
 
-#  ifdef _MSC_VER
+#ifdef _MSC_VER
 typedef __int64          ares_int64_t;
 typedef unsigned __int64 ares_uint64_t;
-#  else
+#else
 typedef long long          ares_int64_t;
 typedef unsigned long long ares_uint64_t;
-#  endif
+#endif
 
 #endif /* __ARES_PRIVATE_H */

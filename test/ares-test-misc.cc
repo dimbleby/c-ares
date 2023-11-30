@@ -45,7 +45,21 @@ TEST_F(DefaultChannelTest, GetServersFailures) {
 }
 
 TEST_F(DefaultChannelTest, SetServers) {
-  EXPECT_EQ(ARES_ENODATA, ares_set_servers(channel_, nullptr));
+  /* NOTE: This test is because we have actual external users doing test case
+   *       simulation and removing all servers to generate various error
+   *       conditions in their own code.  It would make more sense to return
+   *       ARES_ENODATA, but due to historical users, we can't break them.
+   *       See: https://github.com/nodejs/node/pull/50800
+   */
+  EXPECT_EQ(ARES_SUCCESS, ares_set_servers(channel_, nullptr));
+  std::vector<std::string> expected_empty = { };
+  EXPECT_EQ(expected_empty, GetNameServers(channel_));
+  HostResult result;
+  ares_gethostbyname(channel_, "www.google.com.", AF_INET, HostCallback, &result);
+  Process();
+  EXPECT_TRUE(result.done_);
+  EXPECT_EQ(ARES_ESERVFAIL, result.status_);
+
 
   struct ares_addr_node server1;
   struct ares_addr_node server2;
@@ -63,7 +77,15 @@ TEST_F(DefaultChannelTest, SetServers) {
 }
 
 TEST_F(DefaultChannelTest, SetServersPorts) {
-  EXPECT_EQ(ARES_ENODATA, ares_set_servers_ports(channel_, nullptr));
+  /* NOTE: This test is because we have actual external users doing test case
+   *       simulation and removing all servers to generate various error
+   *       conditions in their own code.  It would make more sense to return
+   *       ARES_ENODATA, but due to historical users, we can't break them.
+   *       See: https://github.com/nodejs/node/pull/50800
+   */
+  EXPECT_EQ(ARES_SUCCESS, ares_set_servers_ports(channel_, nullptr));
+  std::vector<std::string> expected_empty = { };
+  EXPECT_EQ(expected_empty, GetNameServers(channel_));
 
   struct ares_addr_port_node server1;
   struct ares_addr_port_node server2;
@@ -90,6 +112,21 @@ TEST_F(DefaultChannelTest, SetServersCSV) {
   EXPECT_EQ(ARES_ENODATA, ares_set_servers_csv(nullptr, "256.1.2.3"));
   EXPECT_EQ(ARES_ENODATA, ares_set_servers_csv(nullptr, "1.2.3.4.5"));
   EXPECT_EQ(ARES_ENODATA, ares_set_servers_csv(nullptr, "1:2:3:4:5"));
+
+  /* NOTE: This test is because we have actual external users doing test case
+   *       simulation and removing all servers to generate various error
+   *       conditions in their own code.  It would make more sense to return
+   *       ARES_ENODATA, but due to historical users, we can't break them.
+   *       See: https://github.com/nodejs/node/pull/50800
+   */
+  EXPECT_EQ(ARES_SUCCESS, ares_set_servers_csv(channel_, NULL));
+  std::vector<std::string> expected_empty = { };
+  EXPECT_EQ(expected_empty, GetNameServers(channel_));
+  EXPECT_EQ(ARES_SUCCESS, ares_set_servers_csv(channel_, ""));
+  EXPECT_EQ(expected_empty, GetNameServers(channel_));
+
+
+
 
   EXPECT_EQ(ARES_SUCCESS,
             ares_set_servers_csv(channel_, "1.2.3.4,0102:0304:0506:0708:0910:1112:1314:1516,2.3.4.5"));
@@ -318,7 +355,7 @@ TEST_F(DefaultChannelTest, SendFailure) {
 std::string ExpandName(const std::vector<byte>& data, int offset,
                        long *enclen) {
   char *name = nullptr;
-  int rc = ares_expand_name(data.data() + offset, data.data(), data.size(),
+  int rc = ares_expand_name(data.data() + offset, data.data(), (int)data.size(),
                             &name, enclen);
   EXPECT_EQ(ARES_SUCCESS, rc);
   std::string result;
@@ -335,7 +372,7 @@ TEST_F(LibraryTest, ExpandName) {
   long enclen;
   std::vector<byte> data1 = {1, 'a', 2, 'b', 'c', 3, 'd', 'e', 'f', 0};
   EXPECT_EQ("a.bc.def", ExpandName(data1, 0, &enclen));
-  EXPECT_EQ(data1.size(), enclen);
+  EXPECT_EQ(data1.size(), (size_t)enclen);
 
   std::vector<byte> data2 = {0};
   EXPECT_EQ("", ExpandName(data2, 0, &enclen));
@@ -384,7 +421,7 @@ TEST_F(LibraryTest, ExpandNameFailure) {
   long enclen;
   SetAllocFail(1);
   EXPECT_EQ(ARES_ENOMEM,
-            ares_expand_name(data1.data(), data1.data(), data1.size(),
+            ares_expand_name(data1.data(), data1.data(), (int)data1.size(),
                              &name, &enclen));
 
   // Empty packet
@@ -393,37 +430,37 @@ TEST_F(LibraryTest, ExpandNameFailure) {
 
   // Start beyond enclosing data
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data1.data() + data1.size(), data1.data(), data1.size(),
+            ares_expand_name(data1.data() + data1.size(), data1.data(), (int)data1.size(),
                              &name, &enclen));
 
   // Length beyond size of enclosing data
   std::vector<byte> data2a = {0x13, 'c', 'o', 'm', 0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data2a.data(), data2a.data(), data2a.size(),
+            ares_expand_name(data2a.data(), data2a.data(), (int)data2a.size(),
                              &name, &enclen));
   std::vector<byte> data2b = {0x1};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data2b.data(), data2b.data(), data2b.size(),
+            ares_expand_name(data2b.data(), data2b.data(), (int)data2b.size(),
                              &name, &enclen));
   std::vector<byte> data2c = {0xC0};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data2c.data(), data2c.data(), data2c.size(),
+            ares_expand_name(data2c.data(), data2c.data(), (int)data2c.size(),
                              &name, &enclen));
 
   // Indirection beyond enclosing data
   std::vector<byte> data3a = {0xC0, 0x02};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data3a.data(), data3a.data(), data3a.size(),
+            ares_expand_name(data3a.data(), data3a.data(), (int)data3a.size(),
                              &name, &enclen));
   std::vector<byte> data3b = {0xC0, 0x0A, 'c', 'o', 'm', 0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data3b.data(), data3b.data(), data3b.size(),
+            ares_expand_name(data3b.data(), data3b.data(), (int)data3b.size(),
                              &name, &enclen));
 
   // Invalid top bits in label length
   std::vector<byte> data4 = {0x03, 'c', 'o', 'm', 0x00, 0x80, 0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data4.data() + 5, data4.data(), data4.size(),
+            ares_expand_name(data4.data() + 5, data4.data(), (int)data4.size(),
                              &name, &enclen));
 
   // Label too long: 64-byte label, with invalid top 2 bits of length (01).
@@ -434,29 +471,29 @@ TEST_F(LibraryTest, ExpandNameFailure) {
                              '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
                              0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data5.data(), data5.data(), data5.size(),
+            ares_expand_name(data5.data(), data5.data(), (int)data5.size(),
                              &name, &enclen)) << name;
 
   // Incomplete indirect length
   std::vector<byte> data6 = {0x03, 'c', 'o', 'm', 0x00, 0xC0};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data6.data() + 5, data6.data(), data6.size(),
+            ares_expand_name(data6.data() + 5, data6.data(), (int)data6.size(),
                              &name, &enclen));
 
   // Indirection loops
   std::vector<byte> data7 = {0xC0, 0x02, 0xC0, 0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data7.data(), data7.data(), data7.size(),
+            ares_expand_name(data7.data(), data7.data(), (int)data7.size(),
                              &name, &enclen));
   std::vector<byte> data8 = {3, 'd', 'e', 'f', 0xC0, 0x08, 0x00, 0x00,
                              3, 'a', 'b', 'c', 0xC0, 0x00};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data8.data(), data8.data(), data8.size(),
+            ares_expand_name(data8.data(), data8.data(), (int)data8.size(),
                              &name, &enclen));
   std::vector<byte> data9 = {0x12, 0x23,  // start 2 bytes in
                              3, 'd', 'e', 'f', 0xC0, 0x02};
   EXPECT_EQ(ARES_EBADNAME,
-            ares_expand_name(data9.data() + 2, data9.data(), data9.size(),
+            ares_expand_name(data9.data() + 2, data9.data(), (int)data9.size(),
                              &name, &enclen));
 }
 
@@ -514,21 +551,21 @@ TEST_F(LibraryTest, ExpandString) {
   char* result = nullptr;
   long len;
   EXPECT_EQ(ARES_SUCCESS,
-            ares_expand_string(s1.data(), s1.data(), s1.size(),
+            ares_expand_string(s1.data(), s1.data(), (int)s1.size(),
                                (unsigned char**)&result, &len));
   EXPECT_EQ("abc", std::string(result));
   EXPECT_EQ(1 + 3, len);  // amount of data consumed includes 1 byte len
   ares_free_string(result);
   result = nullptr;
   EXPECT_EQ(ARES_EBADSTR,
-            ares_expand_string(s1.data() + 1, s1.data(), s1.size(),
+            ares_expand_string(s1.data() + 1, s1.data(), (int)s1.size(),
                                (unsigned char**)&result, &len));
   EXPECT_EQ(ARES_EBADSTR,
-            ares_expand_string(s1.data() + 4, s1.data(), s1.size(),
+            ares_expand_string(s1.data() + 4, s1.data(), (int)s1.size(),
                                (unsigned char**)&result, &len));
   SetAllocFail(1);
   EXPECT_EQ(ARES_ENOMEM,
-            ares_expand_string(s1.data(), s1.data(), s1.size(),
+            ares_expand_string(s1.data(), s1.data(), (int)s1.size(),
                                (unsigned char**)&result, &len));
 }
 
