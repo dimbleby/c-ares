@@ -20,10 +20,10 @@
 #############################################################
 AC_PREREQ([2.60])
 
-AC_INIT([c-ares], [1.23.0],
+AC_INIT([c-ares], [1.24.0],
   [c-ares mailing list: http://lists.haxx.se/listinfo/c-ares])
 
-CARES_VERSION_INFO="11:0:9"
+CARES_VERSION_INFO="12:0:10"
 dnl This flag accepts an argument of the form current[:revision[:age]]. So,
 dnl passing -version-info 3:12:1 sets current to 3, revision to 12, and age to
 dnl 1.
@@ -59,7 +59,7 @@ AC_CONFIG_MACRO_DIR([m4])
 AM_MAINTAINER_MODE
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-AX_REQUIRE_DEFINED([AX_CXX_COMPILE_STDCXX_11])
+AX_REQUIRE_DEFINED([AX_CXX_COMPILE_STDCXX_14])
 
 CARES_CHECK_OPTION_DEBUG
 CARES_CHECK_OPTION_OPTIMIZE
@@ -127,9 +127,12 @@ dnl Get system canonical name
 AC_DEFINE_UNQUOTED(OS, "${host}", [cpu-machine-OS])
 
 XC_CHECK_PROG_CC
-AX_CXX_COMPILE_STDCXX_11([noext],[optional])
+AX_CXX_COMPILE_STDCXX_14([noext],[optional])
 
 XC_AUTOMAKE
+
+dnl make sure we use system extensions like _GNU_SOURCE or _XOPEN_SOURCE
+AC_USE_SYSTEM_EXTENSIONS
 
 dnl This defines _ALL_SOURCE for AIX
 CARES_CHECK_AIX_ALL_SOURCE
@@ -578,6 +581,7 @@ AC_CHECK_HEADERS(
        netinet/in.h \
        netinet/tcp.h \
        net/if.h \
+       ifaddrs.h \
        errno.h \
        socket.h \
        strings.h \
@@ -749,6 +753,7 @@ CARES_CHECK_FUNC_STRNICMP
 CARES_CHECK_FUNC_WRITEV
 CARES_CHECK_FUNC_ARC4RANDOM_BUF
 CARES_CHECK_FUNC_STAT
+CARES_CHECK_FUNC_GETIFADDRS
 
 dnl check for AF_INET6
 CARES_CHECK_CONSTANT(
@@ -918,7 +923,10 @@ AC_CHECK_MEMBER(struct addrinfo.ai_flags,
 
 AC_CHECK_FUNCS([bitncmp \
   gettimeofday \
-  if_indextoname
+  if_indextoname \
+  if_nametoindex \
+  ConvertInterfaceIndexToLuid \
+  ConvertInterfaceLuidToNameA
 ],[
 ],[
   func="$ac_func"
@@ -1026,7 +1034,7 @@ AC_MSG_CHECKING([whether to build tests])
 AC_ARG_ENABLE(tests,
 	AS_HELP_STRING([--enable-tests], [build test suite]),
 	[ build_tests="$enableval" ],
-	[ if test "x$HAVE_CXX11" = "x1" && test "x$cross_compiling" = "xno" ; then
+	[ if test "x$HAVE_CXX14" = "x1" && test "x$cross_compiling" = "xno" ; then
 	    build_tests="yes"
 	  else
 	    build_tests="no"
@@ -1035,8 +1043,8 @@ AC_ARG_ENABLE(tests,
 )
 
 if test "x$build_tests" = "xyes" ; then
-	if test "x$HAVE_CXX11" = "0" ; then
-		AC_MSG_ERROR([*** Building tests requires a CXX11 compiler])
+	if test "x$HAVE_CXX14" = "0" ; then
+		AC_MSG_ERROR([*** Building tests requires a CXX14 compiler])
 	fi
 	if test "x$cross_compiling" = "xyes" ; then
 		AC_MSG_ERROR([*** Tests not supported when cross compiling])

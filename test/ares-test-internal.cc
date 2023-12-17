@@ -1,17 +1,25 @@
-/*
- * Copyright (C) The c-ares project
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) The c-ares project and its contributors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -38,7 +46,6 @@ extern "C" {
 #include "ares_strsplit.h"
 #include "ares_private.h"
 #include "ares__htable.h"
-#include "bitncmp.h"
 
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
@@ -274,30 +281,6 @@ TEST_F(LibraryTest, MallocDataFail) {
   SetAllocSizeFail(sizeof(struct ares_data));
   EXPECT_EQ(nullptr, ares_malloc_data(ARES_DATATYPE_MX_REPLY));
 }
-
-TEST(Misc, Bitncmp) {
-  byte a[4] = {0x80, 0x01, 0x02, 0x03};
-  byte b[4] = {0x80, 0x01, 0x02, 0x04};
-  byte c[4] = {0x01, 0xFF, 0x80, 0x02};
-  EXPECT_GT(0, ares__bitncmp(a, b, sizeof(a)*8));
-  EXPECT_LT(0, ares__bitncmp(b, a, sizeof(a)*8));
-  EXPECT_EQ(0, ares__bitncmp(a, a, sizeof(a)*8));
-
-  for (size_t ii = 1; ii < (3*8+5); ii++) {
-    EXPECT_EQ(0, ares__bitncmp(a, b, ii));
-    EXPECT_EQ(0, ares__bitncmp(b, a, ii));
-    EXPECT_LT(0, ares__bitncmp(a, c, ii));
-    EXPECT_GT(0, ares__bitncmp(c, a, ii));
-  }
-
-  // Last byte differs at 5th bit
-  EXPECT_EQ(0, ares__bitncmp(a, b, 3*8 + 3));
-  EXPECT_EQ(0, ares__bitncmp(a, b, 3*8 + 4));
-  EXPECT_EQ(0, ares__bitncmp(a, b, 3*8 + 5));
-  EXPECT_GT(0, ares__bitncmp(a, b, 3*8 + 6));
-  EXPECT_GT(0, ares__bitncmp(a, b, 3*8 + 7));
-}
-
 
 TEST_F(LibraryTest, ReadLine) {
   TempFile temp("abcde\n0123456789\nXYZ\n012345678901234567890\n\n");
@@ -869,7 +852,7 @@ TEST_F(LibraryTest, BufMisuse) {
   EXPECT_EQ((size_t)0, ares__buf_consume_whitespace(NULL, ARES_FALSE));
   EXPECT_EQ((size_t)0, ares__buf_consume_nonwhitespace(NULL));
   EXPECT_EQ((size_t)0, ares__buf_consume_line(NULL, ARES_FALSE));
-  EXPECT_NE(ARES_SUCCESS, ares__buf_begins_with(NULL, NULL, 0));
+  EXPECT_EQ(ARES_FALSE, ares__buf_begins_with(NULL, NULL, 0));
   EXPECT_EQ((size_t)0, ares__buf_get_position(NULL));
   EXPECT_NE(ARES_SUCCESS, ares__buf_set_position(NULL, 0));
   EXPECT_NE(ARES_SUCCESS, ares__dns_name_parse(NULL, NULL, ARES_FALSE));
@@ -1003,7 +986,7 @@ static int configure_socket(ares_socket_t s) {
   /* Windows */
   unsigned long flags = 1UL;
 #endif
-  return ioctlsocket(s, FIONBIO, &flags);
+  return ioctlsocket(s, (long)FIONBIO, &flags);
 #elif defined(HAVE_IOCTLSOCKET_CAMEL_FIONBIO)
   /* Amiga */
   long flags = 1L;

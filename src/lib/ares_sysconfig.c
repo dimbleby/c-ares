@@ -171,7 +171,7 @@ typedef struct {
   /* Room enough for the string form of any IPv4 or IPv6 address that
    * ares_inet_ntop() will create.  Based on the existing c-ares practice.
    */
-  char   text[INET6_ADDRSTRLEN + 8]; /* [%s]:NNNNN */
+  char   text[INET6_ADDRSTRLEN + 8 + 64]; /* [%s]:NNNNN%iface */
 } Address;
 
 /* Sort Address values \a left and \a right by metric, returning the usual
@@ -309,7 +309,7 @@ static ares_bool_t get_DNS_Windows(char **outptr)
   ULONG                          Bufsz     = IPAA_INITIAL_BUF_SZ;
   ULONG                          AddrFlags = 0;
   int                            trying    = IPAA_MAX_TRIES;
-  int                            res;
+  ULONG                          res;
 
   /* The capacity of addresses, in elements. */
   size_t                         addressesSize;
@@ -400,9 +400,9 @@ static ares_bool_t get_DNS_Windows(char **outptr)
           addressesSize = newSize;
         }
 
-        addresses[addressesIndex].metric =
-          getBestRouteMetric(&ipaaEntry->Luid, (SOCKADDR_INET *)(namesrvr.sa),
-                             ipaaEntry->Ipv4Metric);
+        addresses[addressesIndex].metric = getBestRouteMetric(
+          &ipaaEntry->Luid, (SOCKADDR_INET *)((void *)(namesrvr.sa)),
+          ipaaEntry->Ipv4Metric);
 
         /* Record insertion index to make qsort stable */
         addresses[addressesIndex].orig_idx = addressesIndex;
@@ -416,6 +416,9 @@ static ares_bool_t get_DNS_Windows(char **outptr)
                  ntohs(namesrvr.sa4->sin_port));
         ++addressesIndex;
       } else if (namesrvr.sa->sa_family == AF_INET6) {
+        unsigned int     ll_scope = 0;
+        struct ares_addr addr;
+
         if (memcmp(&namesrvr.sa6->sin6_addr, &ares_in6addr_any,
                    sizeof(namesrvr.sa6->sin6_addr)) == 0) {
           continue;
@@ -433,9 +436,17 @@ static ares_bool_t get_DNS_Windows(char **outptr)
           addressesSize = newSize;
         }
 
-        addresses[addressesIndex].metric =
-          getBestRouteMetric(&ipaaEntry->Luid, (SOCKADDR_INET *)(namesrvr.sa),
-                             ipaaEntry->Ipv6Metric);
+        /* See if its link-local */
+        memset(&addr, 0, sizeof(addr));
+        addr.family = AF_INET6;
+        memcpy(&addr.addr.addr6, &namesrvr.sa6->sin6_addr, 16);
+        if (ares__addr_is_linklocal(&addr)) {
+          ll_scope = ipaaEntry->Ipv6IfIndex;
+        }
+
+        addresses[addressesIndex].metric = getBestRouteMetric(
+          &ipaaEntry->Luid, (SOCKADDR_INET *)((void *)(namesrvr.sa)),
+          ipaaEntry->Ipv6Metric);
 
         /* Record insertion index to make qsort stable */
         addresses[addressesIndex].orig_idx = addressesIndex;
@@ -444,9 +455,16 @@ static ares_bool_t get_DNS_Windows(char **outptr)
                             sizeof(ipaddr))) {
           continue;
         }
-        snprintf(addresses[addressesIndex].text,
-                 sizeof(addresses[addressesIndex].text), "[%s]:%u", ipaddr,
-                 ntohs(namesrvr.sa6->sin6_port));
+
+        if (ll_scope) {
+          snprintf(addresses[addressesIndex].text,
+                   sizeof(addresses[addressesIndex].text), "[%s]:%u%%%u",
+                   ipaddr, ntohs(namesrvr.sa6->sin6_port), ll_scope);
+        } else {
+          snprintf(addresses[addressesIndex].text,
+                   sizeof(addresses[addressesIndex].text), "[%s]:%u", ipaddr,
+                   ntohs(namesrvr.sa6->sin6_port));
+        }
         ++addressesIndex;
       } else {
         /* Skip non-IPv4/IPv6 addresses completely. */
@@ -597,7 +615,7 @@ static ares_status_t ares__init_sysconfig_windows(ares_sysconfig_t *sysconfig)
   ares_status_t status = ARES_SUCCESS;
 
   if (get_DNS_Windows(&line)) {
-    status = ares__sconfig_append_fromstr(&sysconfig->sconfig, line);
+    status = ares__sconfig_append_fromstr(&sysconfig->sconfig, line, ARES_TRUE);
     ares_free(line);
     if (status != ARES_SUCCESS) {
       goto done;
@@ -661,7 +679,7 @@ static ares_status_t ares__init_sysconfig_mvs(ares_sysconfig_t *sysconfig)
 
     status =
       ares__sconfig_append(&sysconfig->sconfig, &addr, htons(addr_in->sin_port),
-                           htons(addr_in->sin_port));
+                           htons(addr_in->sin_port), NULL);
 
     if (status != ARES_SUCCESS) {
       return status;
@@ -678,7 +696,7 @@ static ares_status_t ares__init_sysconfig_mvs(ares_sysconfig_t *sysconfig)
 
     status =
       ares__sconfig_append(&sysconfig->sconfig, &addr, htons(addr_in->sin_port),
-                           htons(addr_in->sin_port));
+                           htons(addr_in->sin_port), NULL);
 
     if (status != ARES_SUCCESS) {
       return status;
@@ -713,7 +731,8 @@ static ares_status_t ares__init_sysconfig_riscos(ares_sysconfig_t *sysconfig)
       if (space) {
         *space = '\0';
       }
-      status = ares__sconfig_append_fromstr(&sysconfig->sconfig, pos);
+      status =
+        ares__sconfig_append_fromstr(&sysconfig->sconfig, pos, ARES_TRUE);
       if (status != ARES_SUCCESS) {
         break;
       }
@@ -741,7 +760,7 @@ static ares_status_t ares__init_sysconfig_watt32(ares_sysconfig_t *sysconfig)
     addr.family            = AF_INET;
     addr.addr.addr4.s_addr = htonl(def_nameservers[i]);
 
-    status = ares__sconfig_append(&sysconfig->sconfig, &addr, 0, 0);
+    status = ares__sconfig_append(&sysconfig->sconfig, &addr, 0, 0, NULL);
 
     if (status != ARES_SUCCESS) {
       return status;
@@ -770,8 +789,8 @@ static ares_status_t ares__init_sysconfig_android(ares_sysconfig_t *sysconfig)
   dns_servers = ares_get_android_server_list(MAX_DNS_PROPERTIES, &num_servers);
   if (dns_servers != NULL) {
     for (i = 0; i < num_servers; i++) {
-      status =
-        ares__sconfig_append_fromstr(&sysconfig->sconfig, dns_servers[i]);
+      status = ares__sconfig_append_fromstr(&sysconfig->sconfig, dns_servers[i],
+                                            ARES_TRUE);
       if (status != ARES_SUCCESS) {
         return status;
       }
@@ -802,7 +821,8 @@ static ares_status_t ares__init_sysconfig_android(ares_sysconfig_t *sysconfig)
       if (__system_property_get(propname, propvalue) < 1) {
         break;
       }
-      status = ares__sconfig_append_fromstr(&sysconfig->sconfig, propvalue);
+      status =
+        ares__sconfig_append_fromstr(&sysconfig->sconfig, propvalue, ARES_TRUE);
       if (status != ARES_SUCCESS) {
         return status;
       }
@@ -823,6 +843,7 @@ static ares_status_t ares__init_sysconfig_libresolv(ares_sysconfig_t *sysconfig)
   int                      nscount;
   size_t                   i;
   size_t                   entries = 0;
+  ares__buf_t             *ipbuf   = NULL;
 
   memset(&res, 0, sizeof(res));
 
@@ -834,8 +855,9 @@ static ares_status_t ares__init_sysconfig_libresolv(ares_sysconfig_t *sysconfig)
 
   for (i = 0; i < (size_t)nscount; ++i) {
     char           ipaddr[INET6_ADDRSTRLEN] = "";
-    char           ipaddr_port[INET6_ADDRSTRLEN + 8]; /* [%s]:NNNNN */
-    unsigned short port = 0;
+    char          *ipstr                    = NULL;
+    unsigned short port                     = 0;
+    unsigned int   ll_scope                 = 0;
 
     sa_family_t    family = addr[i].sin.sin_family;
     if (family == AF_INET) {
@@ -843,18 +865,68 @@ static ares_status_t ares__init_sysconfig_libresolv(ares_sysconfig_t *sysconfig)
       port = ntohs(addr[i].sin.sin_port);
     } else if (family == AF_INET6) {
       ares_inet_ntop(family, &addr[i].sin6.sin6_addr, ipaddr, sizeof(ipaddr));
-      port = ntohs(addr[i].sin6.sin6_port);
+      port     = ntohs(addr[i].sin6.sin6_port);
+      ll_scope = addr[i].sin6.sin6_scope_id;
     } else {
       continue;
     }
 
-    if (port) {
-      snprintf(ipaddr_port, sizeof(ipaddr_port), "[%s]:%u", ipaddr, port);
-    } else {
-      snprintf(ipaddr_port, sizeof(ipaddr_port), "%s", ipaddr);
+
+    /* [ip]:port%iface */
+    ipbuf = ares__buf_create();
+    if (ipbuf == NULL) {
+      status = ARES_ENOMEM;
+      goto done;
     }
 
-    status = ares__sconfig_append_fromstr(&sysconfig->sconfig, ipaddr_port);
+    status = ares__buf_append_str(ipbuf, "[");
+    if (status != ARES_SUCCESS) {
+      goto done;
+    }
+
+    status = ares__buf_append_str(ipbuf, ipaddr);
+    if (status != ARES_SUCCESS) {
+      goto done;
+    }
+
+    status = ares__buf_append_str(ipbuf, "]");
+    if (status != ARES_SUCCESS) {
+      goto done;
+    }
+
+    if (port) {
+      status = ares__buf_append_str(ipbuf, ":");
+      if (status != ARES_SUCCESS) {
+        goto done;
+      }
+      status = ares__buf_append_num_dec(ipbuf, port, 0);
+      if (status != ARES_SUCCESS) {
+        goto done;
+      }
+    }
+
+    if (ll_scope) {
+      status = ares__buf_append_str(ipbuf, "%");
+      if (status != ARES_SUCCESS) {
+        goto done;
+      }
+      status = ares__buf_append_num_dec(ipbuf, ll_scope, 0);
+      if (status != ARES_SUCCESS) {
+        goto done;
+      }
+    }
+
+    ipstr = ares__buf_finish_str(ipbuf, NULL);
+    ipbuf = NULL;
+    if (ipstr == NULL) {
+      status = ARES_ENOMEM;
+      goto done;
+    }
+
+    status =
+      ares__sconfig_append_fromstr(&sysconfig->sconfig, ipstr, ARES_TRUE);
+
+    ares_free(ipstr);
     if (status != ARES_SUCCESS) {
       goto done;
     }
@@ -905,6 +977,7 @@ static ares_status_t ares__init_sysconfig_libresolv(ares_sysconfig_t *sysconfig)
   }
 
 done:
+  ares__buf_destroy(ipbuf);
   res_ndestroy(&res);
   return status;
 }

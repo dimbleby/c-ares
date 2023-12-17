@@ -12,7 +12,7 @@ INCLUDE (CheckCSourceCompiles)
 INCLUDE (CheckStructHasMember)
 INCLUDE (CheckLibraryExists)
 
-PROJECT (c-ares LANGUAGES C VERSION "1.23.0" )
+PROJECT (c-ares LANGUAGES C VERSION "1.24.0" )
 
 # Set this version before release
 SET (CARES_VERSION "${PROJECT_VERSION}")
@@ -30,7 +30,7 @@ INCLUDE (GNUInstallDirs) # include this *AFTER* PROJECT(), otherwise paths are w
 # For example, a version of 4:0:2 would generate output such as:
 #    libname.so   -> libname.so.2
 #    libname.so.2 -> libname.so.2.2.0
-SET (CARES_LIB_VERSIONINFO "11:0:9")
+SET (CARES_LIB_VERSIONINFO "12:0:10")
 
 
 OPTION (CARES_STATIC        "Build as a static library"                                             OFF)
@@ -45,9 +45,9 @@ OPTION (CARES_THREADS       "Build with thread-safety support"                  
 SET    (CARES_RANDOM_FILE "/dev/urandom" CACHE STRING "Suitable File / Device Path for entropy, such as /dev/urandom")
 
 
-# Tests require a C++ compiler
+# Tests require a C++14 compiler
 IF (CARES_BUILD_TESTS OR CARES_BUILD_CONTAINER_TESTS)
-	set(CMAKE_CXX_STANDARD 11)
+	set(CMAKE_CXX_STANDARD 14)
 	set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 	set(CMAKE_CXX_EXTENSIONS FALSE)
 	enable_language(CXX)
@@ -225,6 +225,7 @@ CHECK_INCLUDE_FILES (sys/select.h          HAVE_SYS_SELECT_H)
 CHECK_INCLUDE_FILES (sys/stat.h            HAVE_SYS_STAT_H)
 CHECK_INCLUDE_FILES (sys/time.h            HAVE_SYS_TIME_H)
 CHECK_INCLUDE_FILES (sys/uio.h             HAVE_SYS_UIO_H)
+CHECK_INCLUDE_FILES (ifaddrs.h             HAVE_IFADDRS_H)
 CHECK_INCLUDE_FILES (time.h                HAVE_TIME_H)
 CHECK_INCLUDE_FILES (dlfcn.h               HAVE_DLFCN_H)
 CHECK_INCLUDE_FILES (unistd.h              HAVE_UNISTD_H)
@@ -251,11 +252,11 @@ ENDIF ()
 IF (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 	LIST (APPEND SYSFLAGS -D_DARWIN_C_SOURCE)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-	LIST (APPEND SYSFLAGS -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)
+	LIST (APPEND SYSFLAGS -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "SunOS")
-	LIST (APPEND SYSFLAGS -D__EXTENSIONS__ -D_REENTRANT -D_XOPEN_SOURCE=600)
+	LIST (APPEND SYSFLAGS -D__EXTENSIONS__ -D_REENTRANT -D_XOPEN_SOURCE=700)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "AIX")
-	LIST (APPEND SYSFLAGS -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_USE_IRS)
+	LIST (APPEND SYSFLAGS -D_ALL_SOURCE -D_XOPEN_SOURCE=700 -D_USE_IRS)
 ELSEIF (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 	# Don't define _XOPEN_SOURCE on FreeBSD, it actually reduces visibility instead of increasing it
 ELSEIF (WIN32)
@@ -307,6 +308,7 @@ CARES_EXTRAINCLUDE_IFSET (HAVE_ARPA_INET_H    arpa/inet.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_ARPA_NAMESER_H arpa/nameser.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_NETDB_H        netdb.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_NET_IF_H       net/if.h)
+CARES_EXTRAINCLUDE_IFSET (HAVE_IFADDRS_H      ifaddrs.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_NETINET_IN_H   netinet/in.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_NETINET_TCP_H  netinet/tcp.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_SIGNAL_H       signal.h)
@@ -406,6 +408,9 @@ CHECK_SYMBOL_EXISTS (getservbyport_r "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETSERV
 CHECK_SYMBOL_EXISTS (getservbyname_r "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETSERVBYNAME_R)
 CHECK_SYMBOL_EXISTS (gettimeofday    "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETTIMEOFDAY)
 CHECK_SYMBOL_EXISTS (if_indextoname  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_IF_INDEXTONAME)
+CHECK_SYMBOL_EXISTS (if_nametoindex  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_IF_NAMETOINDEX)
+CHECK_SYMBOL_EXISTS (ConvertInterfaceIndexToLuid  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CONVERTINTERFACEINDEXTOLUID)
+CHECK_SYMBOL_EXISTS (ConvertInterfaceLuidToNameA  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CONVERTINTERFACELUIDTONAMEA)
 CHECK_SYMBOL_EXISTS (inet_net_pton   "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_INET_NET_PTON)
 IF (NOT WIN32)
 	# Disabled on Windows, because these functions are only really supported on Windows
@@ -432,6 +437,7 @@ CHECK_SYMBOL_EXISTS (strnicmp        "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_STRNICM
 CHECK_SYMBOL_EXISTS (writev          "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_WRITEV)
 CHECK_SYMBOL_EXISTS (arc4random_buf  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_ARC4RANDOM_BUF)
 CHECK_SYMBOL_EXISTS (stat            "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_STAT)
+CHECK_SYMBOL_EXISTS (getifaddrs      "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETIFADDRS)
 
 # On Android, the system headers may define __system_property_get(), but excluded
 # from libc.  We need to perform a link test instead of a header/symbol test.
@@ -490,7 +496,7 @@ ENDIF ()
 # defaults.  This should be much quicker and nearly as accurate ... and even
 # if not, it probably won't matter in the least.
 
-IF (HAVE_SSIZE_T AND HAVE_SOCKLEN_T)
+IF (HAVE_SSIZE_T AND HAVE_SOCKLEN_T AND NOT WIN32)
 	# If we have ssize_t and socklen_t, the API is usually sane and uses ssize_t and size_t for lengths
 	SET (RECVFROM_TYPE_RETV ssize_t)
 	SET (RECVFROM_TYPE_ARG3 size_t)

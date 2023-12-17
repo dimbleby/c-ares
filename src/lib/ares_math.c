@@ -30,7 +30,7 @@
 /* Uses public domain code snippets from
  * http://graphics.stanford.edu/~seander/bithacks.html */
 
-size_t ares__round_up_pow2(size_t n)
+static unsigned int ares__round_up_pow2_u32(unsigned int n)
 {
   /* NOTE: if already a power of 2, will return itself, not the next */
   n--;
@@ -39,11 +39,31 @@ size_t ares__round_up_pow2(size_t n)
   n |= n >> 4;
   n |= n >> 8;
   n |= n >> 16;
-  if (sizeof(size_t) > 4) {
-    n |= n >> 32;
-  }
   n++;
   return n;
+}
+
+static ares_int64_t ares__round_up_pow2_u64(ares_int64_t n)
+{
+  /* NOTE: if already a power of 2, will return itself, not the next */
+  n--;
+  n |= n >> 1;
+  n |= n >> 2;
+  n |= n >> 4;
+  n |= n >> 8;
+  n |= n >> 16;
+  n |= n >> 32;
+  n++;
+  return n;
+}
+
+size_t ares__round_up_pow2(size_t n)
+{
+  if (sizeof(size_t) > 4) {
+    return (size_t)ares__round_up_pow2_u64((ares_int64_t)n);
+  }
+
+  return (size_t)ares__round_up_pow2_u32((unsigned int)n);
 }
 
 size_t ares__log2(size_t n)
@@ -111,4 +131,15 @@ size_t ares__count_hexdigits(size_t n)
   }
 
   return digits;
+}
+
+unsigned char ares__count_bits_u8(unsigned char x)
+{
+  /* Implementation obtained from:
+   * http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetTable */
+#define B2(n) n, n + 1, n + 1, n + 2
+#define B4(n) B2(n), B2(n + 1), B2(n + 1), B2(n + 2)
+#define B6(n) B4(n), B4(n + 1), B4(n + 1), B4(n + 2)
+  static const unsigned char lookup[256] = { B6(0), B6(1), B6(1), B6(2) };
+  return lookup[x];
 }

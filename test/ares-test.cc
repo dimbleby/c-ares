@@ -1,17 +1,25 @@
-/*
- * Copyright (C) Brad House
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) The c-ares project and its contributors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -21,9 +29,22 @@
 #include "ares-test.h"
 #include "ares-test-ai.h"
 #include "dns-proto.h"
-
-// Include ares internal files for DNS protocol details
 #include "ares_dns.h"
+
+extern "C" {
+// Remove command-line defines of package variables for the test project...
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+// ... so we can include the library's config without symbol redefinitions.
+#include "ares_setup.h"
+#include "ares_inet_net_pton.h"
+#include "ares_data.h"
+#include "ares_strsplit.h"
+#include "ares_private.h"
+}
+
 
 #ifdef HAVE_NETDB_H
 #include <netdb.h>
@@ -80,11 +101,25 @@ std::map<size_t, int> LibraryTest::size_fails_;
 
 void ProcessWork(ares_channel_t *channel,
                  std::function<std::set<ares_socket_t>()> get_extrafds,
-                 std::function<void(ares_socket_t)> process_extra) {
+                 std::function<void(ares_socket_t)> process_extra,
+                 unsigned int cancel_ms) {
   int nfds, count;
   fd_set readers, writers;
-  struct timeval tv;
+  struct timeval tv_begin  = ares__tvnow();
+  struct timeval tv_cancel = tv_begin;
+
+  if (cancel_ms) {
+    if (verbose) std::cerr << "ares_cancel will be called after " << cancel_ms << "ms" << std::endl;
+    tv_cancel.tv_sec  += (cancel_ms / 1000);
+    tv_cancel.tv_usec += ((cancel_ms % 1000) * 1000);
+  }
+
   while (true) {
+    struct timeval  tv_now = ares__tvnow();
+    struct timeval  tv_remaining;
+    struct timeval  tv;
+    struct timeval *tv_select;
+
     // Retrieve the set of file descriptors that the library wants us to monitor.
     FD_ZERO(&readers);
     FD_ZERO(&writers);
@@ -96,17 +131,34 @@ void ProcessWork(ares_channel_t *channel,
     std::set<ares_socket_t> extrafds = get_extrafds();
     for (ares_socket_t extrafd : extrafds) {
       FD_SET(extrafd, &readers);
-      if (extrafd >= nfds) {
+      if (extrafd >= (ares_socket_t)nfds) {
         nfds = (int)extrafd + 1;
       }
     }
 
     /* If ares_timeout returns NULL, it means there are no requests in queue,
      * so we can break out */
-    if (ares_timeout(channel, NULL, &tv) == NULL)
+    tv_select = ares_timeout(channel, NULL, &tv);
+    if (tv_select == NULL)
       return;
 
-    count = select(nfds, &readers, &writers, nullptr, &tv);
+    if (cancel_ms) {
+      unsigned int remaining_ms;
+      ares__timeval_remaining(&tv_remaining,
+                              &tv_now,
+                              &tv_cancel);
+      remaining_ms = (unsigned int)((tv_remaining.tv_sec * 1000) + (tv_remaining.tv_usec / 1000));
+      if (remaining_ms == 0) {
+        if (verbose) std::cerr << "Issuing ares_cancel()" << std::endl;
+        ares_cancel(channel);
+        cancel_ms = 0; /* Disable issuing cancel again */
+      } else {
+        /* Recalculate proper timeout since we also have a cancel to wait on */
+        tv_select = ares_timeout(channel, &tv_remaining, &tv);
+      }
+    }
+
+    count = select(nfds, &readers, &writers, nullptr, tv_select);
     if (count < 0) {
       fprintf(stderr, "select() failed, errno %d\n", errno);
       return;
@@ -183,16 +235,16 @@ std::set<ares_socket_t> NoExtraFDs() {
   return std::set<ares_socket_t>();
 }
 
-void DefaultChannelTest::Process() {
-  ProcessWork(channel_, NoExtraFDs, nullptr);
+void DefaultChannelTest::Process(unsigned int cancel_ms) {
+  ProcessWork(channel_, NoExtraFDs, nullptr, cancel_ms);
 }
 
-void FileChannelTest::Process() {
-  ProcessWork(channel_, NoExtraFDs, nullptr);
+void FileChannelTest::Process(unsigned int cancel_ms) {
+  ProcessWork(channel_, NoExtraFDs, nullptr, cancel_ms);
 }
 
-void DefaultChannelModeTest::Process() {
-  ProcessWork(channel_, NoExtraFDs, nullptr);
+void DefaultChannelModeTest::Process(unsigned int cancel_ms) {
+  ProcessWork(channel_, NoExtraFDs, nullptr, cancel_ms);
 }
 
 MockServer::MockServer(int family, unsigned short port)
@@ -369,11 +421,11 @@ void MockServer::ProcessFD(ares_socket_t fd) {
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
   byte buffer[2048];
-  int len = recvfrom(fd, BYTE_CAST buffer, sizeof(buffer), 0,
+  ares_ssize_t len = (ares_ssize_t)recvfrom(fd, BYTE_CAST buffer, sizeof(buffer), 0,
                      (struct sockaddr *)&addr, &addrlen);
 
   if (fd != udpfd_) {
-    if (len == 0) {
+    if (len <= 0) {
       connfds_.erase(std::find(connfds_.begin(), connfds_.end(), fd));
       sclose(fd);
       free(tcp_data_);
@@ -402,7 +454,7 @@ void MockServer::ProcessFD(ares_socket_t fd) {
     }
   } else {
     /* UDP is always a single packet */
-    ProcessPacket(fd, &addr, addrlen, buffer, len);
+    ProcessPacket(fd, &addr, addrlen, buffer, (int)len);
   }
 
 }
@@ -448,9 +500,9 @@ void MockServer::ProcessRequest(ares_socket_t fd, struct sockaddr_storage* addr,
     addrlen = 0;
   }
 
-  int rc = sendto(fd, BYTE_CAST reply.data(), reply.size(), 0,
+  ares_ssize_t rc = (ares_ssize_t)sendto(fd, BYTE_CAST reply.data(), (SEND_TYPE_ARG3)reply.size(), 0,
                   (struct sockaddr *)addr, addrlen);
-  if (rc < static_cast<int>(reply.size())) {
+  if (rc < static_cast<ares_ssize_t>(reply.size())) {
     std::cerr << "Failed to send full reply, rc=" << rc << std::endl;
   }
 }
@@ -544,10 +596,7 @@ MockChannelOptsTest::MockChannelOptsTest(int count,
   }
   if (verbose) {
     std::cerr << "Configured library with servers:";
-    std::vector<std::string> servers = GetNameServers(channel_);
-    for (const auto& server : servers) {
-      std::cerr << " " << server;
-    }
+    std::cerr << GetNameServers(channel_);
     std::cerr << std::endl;
   }
 }
@@ -574,11 +623,12 @@ void MockChannelOptsTest::ProcessFD(ares_socket_t fd) {
   }
 }
 
-void MockChannelOptsTest::Process() {
+void MockChannelOptsTest::Process(unsigned int cancel_ms) {
   using namespace std::placeholders;
   ProcessWork(channel_,
               std::bind(&MockChannelOptsTest::fds, this),
-              std::bind(&MockChannelOptsTest::ProcessFD, this, _1));
+              std::bind(&MockChannelOptsTest::ProcessFD, this, _1),
+              cancel_ms);
 }
 
 std::ostream& operator<<(std::ostream& os, const HostResult& result) {
@@ -700,12 +750,12 @@ std::ostream& operator<<(std::ostream& os, const AddrInfo& ai) {
     unsigned short port = 0;
     os << "addr=[";
     if(next->ai_family == AF_INET) {
-      sockaddr_in* sin = (sockaddr_in*)next->ai_addr;
+      sockaddr_in* sin = (sockaddr_in *)((void *)next->ai_addr);
       port = ntohs(sin->sin_port);
       os << AddressToString(&sin->sin_addr, 4);
     }
     else if (next->ai_family == AF_INET6) {
-      sockaddr_in6* sin = (sockaddr_in6*)next->ai_addr;
+      sockaddr_in6* sin = (sockaddr_in6*)((void *)next->ai_addr);
       port = ntohs(sin->sin6_port);
       os << "[" << AddressToString(&sin->sin6_addr, 16) << "]";
     }
@@ -779,38 +829,14 @@ void NameInfoCallback(void *data, int status, int timeouts,
   if (verbose) std::cerr << "NameInfoCallback(" << *result << ")" << std::endl;
 }
 
-std::vector<std::string> GetNameServers(ares_channel_t *channel) {
-  struct ares_addr_port_node* servers = nullptr;
-  EXPECT_EQ(ARES_SUCCESS, ares_get_servers_ports(channel, &servers));
-  struct ares_addr_port_node* server = servers;
-  std::vector<std::string> results;
-  while (server) {
-    std::stringstream ss;
-    switch (server->family) {
-    case AF_INET:
-      ss << AddressToString((char*)&server->addr.addr4, 4);
-      break;
-    case AF_INET6:
-      if (server->udp_port != 0) {
-        ss << '[';
-      }
-      ss << AddressToString((char*)&server->addr.addr6, 16);
-      if (server->udp_port != 0) {
-        ss << ']';
-      }
-      break;
-    default:
-      results.push_back("<unknown family>");
-      break;
-    }
-    if (server->udp_port != 0) {
-      ss << ":" << server->udp_port;
-    }
-    results.push_back(ss.str());
-    server = server->next;
-  }
-  if (servers) ares_free_data(servers);
-  return results;
+std::string GetNameServers(ares_channel_t *channel) {
+  char *csv = ares_get_servers_csv(channel);
+  EXPECT_NE((char *)NULL, csv);
+
+  std::string servers(csv);
+
+  ares_free_string(csv);
+  return servers;
 }
 
 TransientDir::TransientDir(const std::string& dirname) : dirname_(dirname) {
@@ -831,8 +857,8 @@ TransientFile::TransientFile(const std::string& filename,
     std::cerr << "Error: failed to create '" << filename << "'" << std::endl;
     return;
   }
-  int rc = fwrite(contents.data(), 1, contents.size(), f);
-  if (rc != (int)contents.size()) {
+  size_t rc = (size_t)fwrite(contents.data(), 1, contents.size(), f);
+  if (rc != contents.size()) {
     std::cerr << "Error: failed to write contents of '" << filename << "'" << std::endl;
   }
   fclose(f);

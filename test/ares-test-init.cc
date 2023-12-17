@@ -326,13 +326,15 @@ TEST_F(DefaultChannelTest, SetSortlistFailures) {
   EXPECT_EQ(ARES_EBADSTR, ares_set_sortlist(channel_, "111.111.111.111/255.255.255.240*"));
   EXPECT_EQ(ARES_EBADSTR, ares_set_sortlist(channel_, "1 0123456789012345"));
   EXPECT_EQ(ARES_EBADSTR, ares_set_sortlist(channel_, "1 /01234567890123456789012345678901"));
-  EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "xyzzy ; lwk"));
-  EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "xyzzy ; 0x123"));
+  EXPECT_EQ(ARES_EBADSTR, ares_set_sortlist(channel_, "xyzzy ; lwk"));
+  EXPECT_EQ(ARES_EBADSTR, ares_set_sortlist(channel_, "xyzzy ; 0x123"));
 }
 
 TEST_F(DefaultChannelTest, SetSortlistVariants) {
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "1.2.3.4"));
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "1.2.3.4 ; 2.3.4.5"));
+  EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "1.2.3.4/26;1234::5678/126;4.5.6.7;5678::1234"));
+  EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, " 1.2.3.4/26 1234::5678/126   4.5.6.7 5678::1234  "));
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "129.1.1.1"));
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "192.1.1.1"));
   EXPECT_EQ(ARES_SUCCESS, ares_set_sortlist(channel_, "224.1.1.1"));
@@ -391,8 +393,8 @@ CONTAINED_TEST_F(LibraryTest, ContainerChannelInit,
                  "myhostname", "mydomainname.org", filelist) {
   ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-  std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"1.2.3.4:53"};
+  std::string actual = GetNameServers(channel);
+  std::string expected = "1.2.3.4:53";
   EXPECT_EQ(expected, actual);
   EXPECT_EQ(2, channel->ndomains);
   EXPECT_EQ(std::string("first.com"), std::string(channel->domains[0]));
@@ -640,11 +642,9 @@ CONTAINED_TEST_F(LibraryTest, ContainerBlacklistedIpv6,
                  "myhostname", "mydomainname.org", blacklistedIpv6) {
   ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-  std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {
-    "254.192.1.1:53",
-    "[ffc0:0000:0000:0000:0000:0000:0000:c001]:53"
-  };
+  std::string actual = GetNameServers(channel);
+  std::string expected = "254.192.1.1:53,"
+                         "[ffc0::c001]:53";
   EXPECT_EQ(expected, actual);
 
   EXPECT_EQ(1, channel->ndomains);
@@ -662,8 +662,8 @@ CONTAINED_TEST_F(LibraryTest, ContainerMultiResolvInit,
                  "myhostname", "mydomainname.org", multiresolv) {
   ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-  std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"[0001:0000:0000:0000:0000:0000:0000:0002]:53"};
+  std::string actual = GetNameServers(channel);
+  std::string expected = "[1::2]:53";
   EXPECT_EQ(expected, actual);
 
   EXPECT_EQ(1, channel->ndomains);
@@ -693,8 +693,8 @@ CONTAINED_TEST_F(LibraryTest, ContainerEmptyInit,
                  "host.domain.org", "domain.org", empty) {
   ares_channel_t *channel = nullptr;
   EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-  std::vector<std::string> actual = GetNameServers(channel);
-  std::vector<std::string> expected = {"127.0.0.1:53"};
+  std::string actual = GetNameServers(channel);
+  std::string expected = "127.0.0.1:53";
   EXPECT_EQ(expected, actual);
 
   EXPECT_EQ(1, channel->ndomains);

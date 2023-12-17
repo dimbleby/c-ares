@@ -69,7 +69,8 @@ extern std::vector<std::pair<int, bool>>       families_modes;
 // optionally the given set-of-FDs + work function.
 void                    ProcessWork(ares_channel_t                          *channel,
                                     std::function<std::set<ares_socket_t>()> get_extrafds,
-                                    std::function<void(ares_socket_t)>       process_extra);
+                                    std::function<void(ares_socket_t)>       process_extra,
+                                    unsigned int                             cancel_ms = 0);
 std::set<ares_socket_t> NoExtraFDs();
 
 // Test fixture that ensures library initialization, and allows
@@ -128,7 +129,7 @@ public:
   }
 
   // Process all pending work on ares-owned file descriptors.
-  void Process();
+  void Process(unsigned int cancel_ms = 0);
 
 protected:
   ares_channel_t *channel_;
@@ -155,7 +156,7 @@ public:
   }
 
   // Process all pending work on ares-owned file descriptors.
-  void Process();
+  void Process(unsigned int cancel_ms = 0);
 
 protected:
   ares_channel_t *channel_;
@@ -184,7 +185,7 @@ public:
   }
 
   // Process all pending work on ares-owned file descriptors.
-  void Process();
+  void Process(unsigned int cancel_ms = 0);
 
 protected:
   ares_channel_t *channel_;
@@ -271,7 +272,7 @@ public:
 
   // Process all pending work on ares-owned and mock-server-owned file
   // descriptors.
-  void Process();
+  void Process(unsigned int cancel_ms = 0);
 
 protected:
   // NiceMockServer doesn't complain about uninteresting calls.
@@ -444,7 +445,7 @@ void AddrInfoCallback(void *data, int status, int timeouts,
                       struct ares_addrinfo *res);
 
 // Retrieve the name servers used by a channel.
-std::vector<std::string> GetNameServers(ares_channel_t *channel);
+std::string GetNameServers(ares_channel_t *channel);
 
 // RAII class to temporarily create a directory of a given name.
 class TransientDir {
