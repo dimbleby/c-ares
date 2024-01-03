@@ -50,13 +50,6 @@
 #  define INADDR_NONE 0xffffffff
 #endif
 
-#ifdef CARES_EXPOSE_STATICS
-/* Make some internal functions visible for testing */
-#  define STATIC_TESTABLE
-#else
-#  define STATIC_TESTABLE static
-#endif
-
 /* By using a double cast, we can get rid of the bogus warning of
  * warning: cast from 'const struct sockaddr *' to 'const struct sockaddr_in6 *'
  * increases required alignment from 1 to 4 [-Wcast-align]
@@ -364,9 +357,9 @@ void ares__rand_bytes(ares_rand_state *state, unsigned char *buf, size_t len);
 
 unsigned short ares__generate_new_id(ares_rand_state *state);
 struct timeval ares__tvnow(void);
-void ares__timeval_remaining(struct timeval *remaining,
-                             const struct timeval *now,
-                             const struct timeval *tout);
+void           ares__timeval_remaining(struct timeval       *remaining,
+                                       const struct timeval *now,
+                                       const struct timeval *tout);
 ares_status_t  ares__expand_name_validated(const unsigned char *encoded,
                                            const unsigned char *abuf,
                                            size_t alen, char **s, size_t *enclen,

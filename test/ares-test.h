@@ -20,7 +20,9 @@
 #define ARES_TEST_H
 
 #include "ares_setup.h"
-#include "ares.h"
+#ifdef HAVE_CONFIG_H
+#include "ares_config.h"
+#endif
 
 #include "dns-proto.h"
 // Include ares internal file for DNS protocol constants
@@ -29,9 +31,6 @@
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 
-#ifdef HAVE_CONFIG_H
-#  include "config.h"
-#endif
 #if defined(HAVE_USER_NAMESPACE) && defined(HAVE_UTS_NAMESPACE)
 #  define HAVE_CONTAINER
 #endif
@@ -340,7 +339,7 @@ ACTION_P2(CancelChannel, mockserver, channel)
 }
 
 // gMock action to disconnect all connections.
-ACTION_P2(Disconnect, mockserver)
+ACTION_P(Disconnect, mockserver)
 {
   mockserver->Disconnect();
 }

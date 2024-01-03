@@ -12,7 +12,7 @@ INCLUDE (CheckCSourceCompiles)
 INCLUDE (CheckStructHasMember)
 INCLUDE (CheckLibraryExists)
 
-PROJECT (c-ares LANGUAGES C VERSION "1.24.0" )
+PROJECT (c-ares LANGUAGES C VERSION "1.25.0" )
 
 # Set this version before release
 SET (CARES_VERSION "${PROJECT_VERSION}")
@@ -30,7 +30,7 @@ INCLUDE (GNUInstallDirs) # include this *AFTER* PROJECT(), otherwise paths are w
 # For example, a version of 4:0:2 would generate output such as:
 #    libname.so   -> libname.so.2
 #    libname.so.2 -> libname.so.2.2.0
-SET (CARES_LIB_VERSIONINFO "12:0:10")
+SET (CARES_LIB_VERSIONINFO "12:1:10")
 
 
 OPTION (CARES_STATIC        "Build as a static library"                                             OFF)
@@ -89,14 +89,6 @@ IF (CARES_SYMBOL_HIDING)
 		MESSAGE (FATAL_ERROR "Hiding symbols requires CMake 3.12")
 	ENDIF ()
 	CMAKE_POLICY (SET CMP0063 NEW)
-	SET (CARES_SYMBOL_SCOPE_EXTERN [=[__attribute__ ((visibility("default")))]=])
-	CHECK_C_SOURCE_COMPILES ("
-		${CARES_SYMBOL_SCOPE_EXTERN} int somefunc() { return 0; }
-		int main() { return somefunc(); }
-	" HAVE_VISIBILITY_ATTRIBUTE)
-	IF (NOT HAVE_VISIBILITY_ATTRIBUTE)
-		MESSAGE (FATAL_ERROR "C compiler does not accept visibility attribute")
-	ENDIF ()
 ENDIF ()
 
 # Keep build organized.
@@ -210,7 +202,12 @@ CHECK_INCLUDE_FILES (malloc.h              HAVE_MALLOC_H)
 CHECK_INCLUDE_FILES (memory.h              HAVE_MEMORY_H)
 CHECK_INCLUDE_FILES (netdb.h               HAVE_NETDB_H)
 CHECK_INCLUDE_FILES (netinet/in.h          HAVE_NETINET_IN_H)
-CHECK_INCLUDE_FILES (net/if.h              HAVE_NET_IF_H)
+# On old MacOS SDK versions, you must include sys/socket.h before net/if.h
+IF (HAVE_SYS_SOCKET_H)
+  CHECK_INCLUDE_FILES ("sys/socket.h;net/if.h"  HAVE_NET_IF_H)
+ELSE ()
+  CHECK_INCLUDE_FILES (net/if.h                 HAVE_NET_IF_H)
+ENDIF ()
 CHECK_INCLUDE_FILES (signal.h              HAVE_SIGNAL_H)
 CHECK_INCLUDE_FILES (socket.h              HAVE_SOCKET_H)
 CHECK_INCLUDE_FILES (stdbool.h             HAVE_STDBOOL_H)
@@ -225,6 +222,7 @@ CHECK_INCLUDE_FILES (sys/select.h          HAVE_SYS_SELECT_H)
 CHECK_INCLUDE_FILES (sys/stat.h            HAVE_SYS_STAT_H)
 CHECK_INCLUDE_FILES (sys/time.h            HAVE_SYS_TIME_H)
 CHECK_INCLUDE_FILES (sys/uio.h             HAVE_SYS_UIO_H)
+CHECK_INCLUDE_FILES (sys/random.h          HAVE_SYS_RANDOM_H)
 CHECK_INCLUDE_FILES (ifaddrs.h             HAVE_IFADDRS_H)
 CHECK_INCLUDE_FILES (time.h                HAVE_TIME_H)
 CHECK_INCLUDE_FILES (dlfcn.h               HAVE_DLFCN_H)
@@ -323,6 +321,7 @@ CARES_EXTRAINCLUDE_IFSET (HAVE_SYS_SOCKIO_H	sys/sockio.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_SYS_TIME_H     sys/time.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_SYS_STAT_H     sys/stat.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_SYS_UIO_H      sys/uio.h)
+CARES_EXTRAINCLUDE_IFSET (HAVE_SYS_RANDOM_H   sys/random.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_TIME_H         time.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_FCNTL_H        fcntl.h)
 CARES_EXTRAINCLUDE_IFSET (HAVE_UNISTD_H       unistd.h)
@@ -357,10 +356,8 @@ ENDMACRO ()
 
 CARES_TYPE_EXISTS (socklen_t                 HAVE_SOCKLEN_T)
 CARES_TYPE_EXISTS (SOCKET                    HAVE_TYPE_SOCKET)
-CARES_TYPE_EXISTS (bool                      HAVE_BOOL_T)
 CARES_TYPE_EXISTS (ssize_t                   HAVE_SSIZE_T)
 CARES_TYPE_EXISTS ("long long"               HAVE_LONGLONG)
-CARES_TYPE_EXISTS (sig_atomic_t              HAVE_SIG_ATOMIC_T)
 CARES_TYPE_EXISTS ("struct addrinfo"         HAVE_STRUCT_ADDRINFO)
 CARES_TYPE_EXISTS ("struct in6_addr"         HAVE_STRUCT_IN6_ADDR)
 CARES_TYPE_EXISTS ("struct sockaddr_in6"     HAVE_STRUCT_SOCKADDR_IN6)
@@ -385,13 +382,9 @@ IF ((NOT APPLE) OR IOS_V10 OR MACOS_V1012)
 	CHECK_SYMBOL_EXISTS (CLOCK_MONOTONIC "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CLOCK_GETTIME_MONOTONIC)
 ENDIF ()
 
-CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in6" sin6_scope_id "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID LANGUAGE C)
-
-# Check for "LL" numeric suffix support
-CHECK_C_SOURCE_COMPILES ("int main() { int n=1234LL; return 0; }" HAVE_LL)
+CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in6" sin6_scope_id "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID LANGUAGE C)
 
 
-CHECK_SYMBOL_EXISTS (bitncmp         "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_BITNCMP)
 CHECK_SYMBOL_EXISTS (closesocket     "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CLOSESOCKET)
 CHECK_SYMBOL_EXISTS (CloseSocket     "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CLOSESOCKET_CAMEL)
 CHECK_SYMBOL_EXISTS (connect         "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_CONNECT)
@@ -399,8 +392,6 @@ CHECK_SYMBOL_EXISTS (fcntl           "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_FCNTL)
 CHECK_SYMBOL_EXISTS (freeaddrinfo    "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_FREEADDRINFO)
 CHECK_SYMBOL_EXISTS (getaddrinfo     "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETADDRINFO)
 CHECK_SYMBOL_EXISTS (getenv          "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETENV)
-CHECK_SYMBOL_EXISTS (gethostbyaddr   "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETHOSTBYADDR)
-CHECK_SYMBOL_EXISTS (gethostbyname   "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETHOSTBYNAME)
 CHECK_SYMBOL_EXISTS (gethostname     "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETHOSTNAME)
 CHECK_SYMBOL_EXISTS (getnameinfo     "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETNAMEINFO)
 CHECK_SYMBOL_EXISTS (getrandom       "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_GETRANDOM)
@@ -731,7 +722,6 @@ IF (CARES_INSTALL)
 
 	# pkgconfig support
 	IF (NOT CARES_SHARED)
-		SET (CPPFLAG_CARES_STATICLIB "-DCARES_STATICLIB")
 		FOREACH (LIB ${CARES_DEPENDENT_LIBS})
 			SET (CARES_PRIVATE_LIBS "${CARES_PRIVATE_LIBS} -l${LIB}")
 		ENDFOREACH ()
