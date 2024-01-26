@@ -1,17 +1,25 @@
-/*
- * Copyright (C) The c-ares project
+/* MIT License
  *
- * Permission to use, copy, modify, and distribute this
- * software and its documentation for any purpose and without
- * fee is hereby granted, provided that the above copyright
- * notice appear in all copies and that both that copyright
- * notice and this permission notice appear in supporting
- * documentation, and that the name of M.I.T. not be used in
- * advertising or publicity pertaining to distribution of the
- * software without specific, written prior permission.
- * M.I.T. makes no representations about the suitability of
- * this software for any purpose.  It is provided "as is"
- * without express or implied warranty.
+ * Copyright (c) The c-ares project and its contributors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -41,6 +49,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -60,9 +69,20 @@ extern const std::vector<std::pair<int, bool>> both_families_both_modes;
 extern const std::vector<std::pair<int, bool>> ipv4_family_both_modes;
 extern const std::vector<std::pair<int, bool>> ipv6_family_both_modes;
 
+extern const std::vector<std::tuple<ares_evsys_t, int, bool>> all_evsys_ipv4_family_both_modes;
+extern const std::vector<std::tuple<ares_evsys_t, int, bool>> all_evsys_ipv6_family_both_modes;
+extern const std::vector<std::tuple<ares_evsys_t, int, bool>> all_evsys_both_families_both_modes;
+
+extern const std::vector<std::tuple<ares_evsys_t, int>> all_evsys_ipv4_family;
+extern const std::vector<std::tuple<ares_evsys_t, int>> all_evsys_ipv6_family;
+extern const std::vector<std::tuple<ares_evsys_t, int>> all_evsys_both_families;
+
 // Which parameters to use in tests
-extern std::vector<int>                        families;
-extern std::vector<std::pair<int, bool>>       families_modes;
+extern std::vector<int>                                 families;
+extern std::vector<std::tuple<ares_evsys_t, int>>       evsys_families;
+extern std::vector<std::pair<int, bool>>                families_modes;
+extern std::vector<std::tuple<ares_evsys_t, int, bool>> evsys_families_modes;
+
 
 // Process all pending work on ares-owned file descriptors, plus
 // optionally the given set-of-FDs + work function.
@@ -70,7 +90,18 @@ void                    ProcessWork(ares_channel_t                          *cha
                                     std::function<std::set<ares_socket_t>()> get_extrafds,
                                     std::function<void(ares_socket_t)>       process_extra,
                                     unsigned int                             cancel_ms = 0);
+void ProcessWorkEventThread(ares_channel_t *channel,
+                            std::function<std::set<ares_socket_t>()> get_extrafds,
+                            std::function<void(ares_socket_t)> process_extra,
+                            unsigned int cancel_ms);
 std::set<ares_socket_t> NoExtraFDs();
+
+const char *af_tostr(int af);
+const char *mode_tostr(bool mode);
+std::string PrintFamilyMode(const testing::TestParamInfo<std::pair<int, bool>> &info);
+std::string PrintFamily(const testing::TestParamInfo<int> &info);
+
+
 
 // Test fixture that ensures library initialization, and allows
 // memory allocations to be failed.
@@ -105,6 +136,7 @@ private:
   static bool                  ShouldAllocFail(size_t size);
   static unsigned long long    fails_;
   static std::map<size_t, int> size_fails_;
+  static std::mutex            lock_;
 };
 
 // Test fixture that uses a default channel.
@@ -315,6 +347,59 @@ public:
   {
   }
 };
+
+
+class MockEventThreadOptsTest : public MockChannelOptsTest {
+public:
+  MockEventThreadOptsTest(int count, ares_evsys_t evsys, int family, bool force_tcp,
+                          struct ares_options *givenopts, int optmask)
+    : MockChannelOptsTest(count, family, force_tcp, FillOptionsET(&evopts_, givenopts, evsys), optmask | ARES_OPT_EVENT_THREAD)
+  {
+  }
+
+  void Process(unsigned int cancel_ms = 0);
+
+  static struct ares_options *FillOptionsET(struct ares_options *opts, struct ares_options *givenopts, ares_evsys_t evsys) {
+    if (givenopts) {
+      memcpy(opts, givenopts, sizeof(*opts));
+    } else {
+      memset(opts, 0, sizeof(*opts));
+    }
+    opts->evsys = evsys;
+    return opts;
+  }
+
+private:
+  struct ares_options evopts_;
+};
+
+class MockEventThreadTest
+  : public MockEventThreadOptsTest,
+    public ::testing::WithParamInterface<std::tuple<ares_evsys_t, int, bool>> {
+public:
+  MockEventThreadTest()
+    : MockEventThreadOptsTest(1, std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam()), nullptr, 0)
+  {
+  }
+};
+
+class MockUDPEventThreadTest : public MockEventThreadOptsTest,
+                           public ::testing::WithParamInterface<std::tuple<ares_evsys_t,int>> {
+public:
+  MockUDPEventThreadTest() : MockEventThreadOptsTest(1, std::get<0>(GetParam()), std::get<1>(GetParam()), false, nullptr, 0)
+  {
+  }
+};
+
+class MockTCPEventThreadTest : public MockEventThreadOptsTest,
+                               public ::testing::WithParamInterface<std::tuple<ares_evsys_t,int>> {
+public:
+  MockTCPEventThreadTest() : MockEventThreadOptsTest(1, std::get<0>(GetParam()), std::get<1>(GetParam()), true, nullptr, 0)
+  {
+  }
+};
+
+
 
 // gMock action to set the reply for a mock server.
 ACTION_P2(SetReplyData, mockserver, data)

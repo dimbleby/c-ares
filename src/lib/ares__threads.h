@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) The c-ares project and its contributors
+ * Copyright (c) 2023 Brad House
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,28 +23,23 @@
  *
  * SPDX-License-Identifier: MIT
  */
-#include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef __ARES__THREADS_H
+#define __ARES__THREADS_H
 
-#include "ares.h"
-// Include ares internal file for DNS protocol constants
-#include "ares_nameser.h"
+struct ares__thread_mutex;
+typedef struct ares__thread_mutex ares__thread_mutex_t;
 
-int LLVMFuzzerTestOneInput(const unsigned char *data, unsigned long size);
+ares__thread_mutex_t             *ares__thread_mutex_create(void);
+void ares__thread_mutex_destroy(ares__thread_mutex_t *mut);
+void ares__thread_mutex_lock(ares__thread_mutex_t *mut);
+void ares__thread_mutex_unlock(ares__thread_mutex_t *mut);
 
-// Entrypoint for Clang's libfuzzer, exercising query creation.
-int LLVMFuzzerTestOneInput(const unsigned char *data, unsigned long size)
-{
-  // Null terminate the data.
-  char          *name   = malloc(size + 1);
-  unsigned char *buf    = NULL;
-  int            buflen = 0;
-  name[size]            = '\0';
-  memcpy(name, data, size);
+struct ares__thread;
+typedef struct ares__thread ares__thread_t;
 
-  ares_create_query(name, C_IN, T_AAAA, 1234, 0, &buf, &buflen, 1024);
-  free(buf);
-  free(name);
-  return 0;
-}
+typedef void               *(*ares__thread_func_t)(void *arg);
+ares_status_t               ares__thread_create(ares__thread_t    **thread,
+                                                ares__thread_func_t func, void *arg);
+ares_status_t ares__thread_join(ares__thread_t *thread, void **rv);
+
+#endif
