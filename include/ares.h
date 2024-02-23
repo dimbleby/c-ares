@@ -797,7 +797,7 @@ CARES_EXTERN ares_status_t ares_queue_wait_empty(ares_channel_t *channel,
  *  \param[in] channel Initialized ares channel
  *  \return Number of active queries to servers
  */
-CARES_EXTERN size_t        ares_queue_active_queries(ares_channel_t *channel);
+CARES_EXTERN size_t ares_queue_active_queries(const ares_channel_t *channel);
 
 #ifdef __cplusplus
 }
