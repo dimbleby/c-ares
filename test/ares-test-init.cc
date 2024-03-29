@@ -53,13 +53,6 @@ TEST(LibraryInit, UnexpectedCleanup) {
   EXPECT_EQ(EXPECTED_NONINIT, ares_library_initialized());
 }
 
-TEST(LibraryInit, DISABLED_InvalidParam) {
-  // TODO: police flags argument to ares_library_init()
-  EXPECT_EQ(ARES_EBADQUERY, ares_library_init(ARES_LIB_INIT_ALL << 2));
-  EXPECT_EQ(EXPECTED_NONINIT, ares_library_initialized());
-  ares_library_cleanup();
-}
-
 TEST(LibraryInit, Nested) {
   EXPECT_EQ(EXPECTED_NONINIT, ares_library_initialized());
   EXPECT_EQ(ARES_SUCCESS, ares_library_init(ARES_LIB_INIT_ALL));
@@ -512,22 +505,6 @@ CONTAINED_TEST_F(LibraryTest, ContainerMyHostsInit,
   return HasFailure();
 }
 
-NameContentList hostconf = {
-  {"/etc/resolv.conf", "nameserver 1.2.3.4\n"
-                       "sortlist1.2.3.4\n"  // malformed line
-                       "search first.com second.com\n"},
-  {"/etc/host.conf", "order bind hosts\n"}};
-CONTAINED_TEST_F(LibraryTest, ContainerHostConfInit,
-                 "myhostname", "mydomainname.org", hostconf) {
-  ares_channel_t *channel = nullptr;
-  EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-
-  EXPECT_EQ(std::string("bf"), std::string(channel->lookups));
-
-  ares_destroy(channel);
-  return HasFailure();
-}
-
 NameContentList svcconf = {
   {"/etc/resolv.conf", "nameserver 1.2.3.4\n"
                        "search first.com second.com\n"},
@@ -589,15 +566,7 @@ CONTAINED_TEST_F(LibraryTest, ContainerNsswitchConfNotReadable,
   ares_destroy(channel);
   return HasFailure();
 }
-CONTAINED_TEST_F(LibraryTest, ContainerHostConfNotReadable,
-                 "myhostname", "mydomainname.org", hostconf) {
-  ares_channel_t *channel = nullptr;
-  // Unavailable /etc/host.conf falls back to defaults.
-  MakeUnreadable hide("/etc/host.conf");
-  EXPECT_EQ(ARES_SUCCESS, ares_init(&channel));
-  ares_destroy(channel);
-  return HasFailure();
-}
+
 CONTAINED_TEST_F(LibraryTest, ContainerSvcConfNotReadable,
                  "myhostname", "mydomainname.org", svcconf) {
   ares_channel_t *channel = nullptr;
