@@ -1,3 +1,12 @@
+## c-ares version 1.28.1 - Mar 30 2024
+
+This release contains a fix for a single significant regression introduced
+in c-ares 1.28.0.
+
+* `ares_search()` and `ares_getaddrinfo()` resolution fails if no search domains
+  are specified. [Issue #737](https://github.com/c-ares/c-ares/issues/737)
+
+
 ## c-ares version 1.28.0 - Mar 29 2024
 
 This is a feature and bugfix release.
@@ -6,7 +15,7 @@ Features:
 
 * Emit warnings when deprecated c-ares functions are used.  This can be
   disabled by passing a compiler definition of `CARES_NO_DEPRECATED`. [PR #732](https://github.com/c-ares/c-ares/pull/732)
-* Add function `ares_search_dnrec()` to search for records using the new DNS
+* Add function `ares_search_dnsrec()` to search for records using the new DNS
   record data structures. [PR #719](https://github.com/c-ares/c-ares/pull/719)
 * Rework internals to pass around `ares_dns_record_t` instead of binary data,
   this introduces new public functions of `ares_query_dnsrec()` and
