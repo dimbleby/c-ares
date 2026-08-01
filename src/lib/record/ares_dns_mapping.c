@@ -92,6 +92,7 @@ ares_bool_t ares_dns_rec_type_isvalid(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_MX:
     case ARES_REC_TYPE_TXT:
     case ARES_REC_TYPE_SIG:
+    case ARES_REC_TYPE_KEY:
     case ARES_REC_TYPE_AAAA:
     case ARES_REC_TYPE_SRV:
     case ARES_REC_TYPE_NAPTR:
@@ -103,6 +104,8 @@ ares_bool_t ares_dns_rec_type_isvalid(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_DNSKEY:
     case ARES_REC_TYPE_NSEC3:
     case ARES_REC_TYPE_NSEC3PARAM:
+    case ARES_REC_TYPE_CDS:
+    case ARES_REC_TYPE_CDNSKEY:
     case ARES_REC_TYPE_TLSA:
     case ARES_REC_TYPE_SVCB:
     case ARES_REC_TYPE_HTTPS:
@@ -214,6 +217,8 @@ const char *ares_dns_rec_type_tostr(ares_dns_rec_type_t type)
       return "TXT";
     case ARES_REC_TYPE_SIG:
       return "SIG";
+    case ARES_REC_TYPE_KEY:
+      return "KEY";
     case ARES_REC_TYPE_AAAA:
       return "AAAA";
     case ARES_REC_TYPE_SRV:
@@ -236,6 +241,10 @@ const char *ares_dns_rec_type_tostr(ares_dns_rec_type_t type)
       return "NSEC3";
     case ARES_REC_TYPE_NSEC3PARAM:
       return "NSEC3PARAM";
+    case ARES_REC_TYPE_CDS:
+      return "CDS";
+    case ARES_REC_TYPE_CDNSKEY:
+      return "CDNSKEY";
     case ARES_REC_TYPE_TLSA:
       return "TLSA";
     case ARES_REC_TYPE_SVCB:
@@ -368,6 +377,18 @@ const char *ares_dns_rr_key_tostr(ares_dns_rr_key_t key)
 
     case ARES_RR_SIG_SIGNATURE:
       return "SIGNATURE";
+
+    case ARES_RR_KEY_FLAGS:
+      return "FLAGS";
+
+    case ARES_RR_KEY_PROTOCOL:
+      return "PROTOCOL";
+
+    case ARES_RR_KEY_ALGORITHM:
+      return "ALGORITHM";
+
+    case ARES_RR_KEY_PUBLIC_KEY:
+      return "PUBLIC_KEY";
 
     case ARES_RR_SRV_PRIORITY:
       return "PRIORITY";
@@ -507,6 +528,30 @@ const char *ares_dns_rr_key_tostr(ares_dns_rr_key_t key)
     case ARES_RR_NSEC3PARAM_SALT:
       return "SALT";
 
+    case ARES_RR_CDS_KEY_TAG:
+      return "KEY_TAG";
+
+    case ARES_RR_CDS_ALGORITHM:
+      return "ALGORITHM";
+
+    case ARES_RR_CDS_DIGEST_TYPE:
+      return "DIGEST_TYPE";
+
+    case ARES_RR_CDS_DIGEST:
+      return "DIGEST";
+
+    case ARES_RR_CDNSKEY_FLAGS:
+      return "FLAGS";
+
+    case ARES_RR_CDNSKEY_PROTOCOL:
+      return "PROTOCOL";
+
+    case ARES_RR_CDNSKEY_ALGORITHM:
+      return "ALGORITHM";
+
+    case ARES_RR_CDNSKEY_PUBLIC_KEY:
+      return "PUBLIC_KEY";
+
     case ARES_RR_TLSA_CERT_USAGE:
       return "CERT_USAGE";
 
@@ -617,7 +662,10 @@ ares_dns_datatype_t ares_dns_rr_key_datatype(ares_dns_rr_key_t key)
     case ARES_RR_RRSIG_TYPE_COVERED:
     case ARES_RR_RRSIG_KEY_TAG:
     case ARES_RR_DS_KEY_TAG:
+    case ARES_RR_KEY_FLAGS:
     case ARES_RR_DNSKEY_FLAGS:
+    case ARES_RR_CDS_KEY_TAG:
+    case ARES_RR_CDNSKEY_FLAGS:
     case ARES_RR_NSEC3_ITERATIONS:
     case ARES_RR_NSEC3PARAM_ITERATIONS:
     case ARES_RR_SRV_PRIORITY:
@@ -640,10 +688,16 @@ ares_dns_datatype_t ares_dns_rr_key_datatype(ares_dns_rr_key_t key)
     case ARES_RR_RRSIG_LABELS:
     case ARES_RR_DS_ALGORITHM:
     case ARES_RR_DS_DIGEST_TYPE:
+    case ARES_RR_KEY_PROTOCOL:
+    case ARES_RR_KEY_ALGORITHM:
     case ARES_RR_SSHFP_ALGORITHM:
     case ARES_RR_SSHFP_FP_TYPE:
     case ARES_RR_DNSKEY_PROTOCOL:
     case ARES_RR_DNSKEY_ALGORITHM:
+    case ARES_RR_CDS_ALGORITHM:
+    case ARES_RR_CDS_DIGEST_TYPE:
+    case ARES_RR_CDNSKEY_PROTOCOL:
+    case ARES_RR_CDNSKEY_ALGORITHM:
     case ARES_RR_NSEC3_HASH_ALGORITHM:
     case ARES_RR_NSEC3_FLAGS:
     case ARES_RR_NSEC3PARAM_HASH_ALGORITHM:
@@ -664,9 +718,12 @@ ares_dns_datatype_t ares_dns_rr_key_datatype(ares_dns_rr_key_t key)
     case ARES_RR_SIG_SIGNATURE:
     case ARES_RR_RRSIG_SIGNATURE:
     case ARES_RR_DS_DIGEST:
+    case ARES_RR_KEY_PUBLIC_KEY:
     case ARES_RR_SSHFP_FINGERPRINT:
     case ARES_RR_NSEC_TYPE_BIT_MAPS:
     case ARES_RR_DNSKEY_PUBLIC_KEY:
+    case ARES_RR_CDS_DIGEST:
+    case ARES_RR_CDNSKEY_PUBLIC_KEY:
     case ARES_RR_NSEC3_SALT:
     case ARES_RR_NSEC3_NEXT_HASHED_OWNER:
     case ARES_RR_NSEC3_TYPE_BIT_MAPS:
@@ -702,6 +759,10 @@ static const ares_dns_rr_key_t rr_sig_keys[]   = {
   ARES_RR_SIG_ORIGINAL_TTL, ARES_RR_SIG_EXPIRATION,   ARES_RR_SIG_INCEPTION,
   ARES_RR_SIG_KEY_TAG,      ARES_RR_SIG_SIGNERS_NAME, ARES_RR_SIG_SIGNATURE
 };
+static const ares_dns_rr_key_t rr_key_keys[]  = { ARES_RR_KEY_FLAGS,
+                                                  ARES_RR_KEY_PROTOCOL,
+                                                  ARES_RR_KEY_ALGORITHM,
+                                                  ARES_RR_KEY_PUBLIC_KEY };
 static const ares_dns_rr_key_t rr_txt_keys[]  = { ARES_RR_TXT_DATA };
 static const ares_dns_rr_key_t rr_aaaa_keys[] = { ARES_RR_AAAA_ADDR };
 static const ares_dns_rr_key_t rr_srv_keys[]  = {
@@ -743,6 +804,14 @@ static const ares_dns_rr_key_t rr_nsec3_keys[]  = {
 static const ares_dns_rr_key_t rr_nsec3param_keys[] = {
   ARES_RR_NSEC3PARAM_HASH_ALGORITHM, ARES_RR_NSEC3PARAM_FLAGS,
   ARES_RR_NSEC3PARAM_ITERATIONS, ARES_RR_NSEC3PARAM_SALT
+};
+static const ares_dns_rr_key_t rr_cds_keys[]     = { ARES_RR_CDS_KEY_TAG,
+                                                     ARES_RR_CDS_ALGORITHM,
+                                                     ARES_RR_CDS_DIGEST_TYPE,
+                                                     ARES_RR_CDS_DIGEST };
+static const ares_dns_rr_key_t rr_cdnskey_keys[] = {
+  ARES_RR_CDNSKEY_FLAGS, ARES_RR_CDNSKEY_PROTOCOL, ARES_RR_CDNSKEY_ALGORITHM,
+  ARES_RR_CDNSKEY_PUBLIC_KEY
 };
 static const ares_dns_rr_key_t rr_tlsa_keys[]   = { ARES_RR_TLSA_CERT_USAGE,
                                                     ARES_RR_TLSA_SELECTOR,
@@ -800,6 +869,9 @@ const ares_dns_rr_key_t *ares_dns_rr_get_keys(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_SIG:
       *cnt = sizeof(rr_sig_keys) / sizeof(*rr_sig_keys);
       return rr_sig_keys;
+    case ARES_REC_TYPE_KEY:
+      *cnt = sizeof(rr_key_keys) / sizeof(*rr_key_keys);
+      return rr_key_keys;
     case ARES_REC_TYPE_AAAA:
       *cnt = sizeof(rr_aaaa_keys) / sizeof(*rr_aaaa_keys);
       return rr_aaaa_keys;
@@ -833,6 +905,12 @@ const ares_dns_rr_key_t *ares_dns_rr_get_keys(ares_dns_rec_type_t type,
     case ARES_REC_TYPE_NSEC3PARAM:
       *cnt = sizeof(rr_nsec3param_keys) / sizeof(*rr_nsec3param_keys);
       return rr_nsec3param_keys;
+    case ARES_REC_TYPE_CDS:
+      *cnt = sizeof(rr_cds_keys) / sizeof(*rr_cds_keys);
+      return rr_cds_keys;
+    case ARES_REC_TYPE_CDNSKEY:
+      *cnt = sizeof(rr_cdnskey_keys) / sizeof(*rr_cdnskey_keys);
+      return rr_cdnskey_keys;
     case ARES_REC_TYPE_TLSA:
       *cnt = sizeof(rr_tlsa_keys) / sizeof(*rr_tlsa_keys);
       return rr_tlsa_keys;
@@ -906,6 +984,7 @@ ares_bool_t ares_dns_rec_type_fromstr(ares_dns_rec_type_t *qtype,
     { "MX",         ARES_REC_TYPE_MX         },
     { "TXT",        ARES_REC_TYPE_TXT        },
     { "SIG",        ARES_REC_TYPE_SIG        },
+    { "KEY",        ARES_REC_TYPE_KEY        },
     { "AAAA",       ARES_REC_TYPE_AAAA       },
     { "SRV",        ARES_REC_TYPE_SRV        },
     { "NAPTR",      ARES_REC_TYPE_NAPTR      },
@@ -917,6 +996,8 @@ ares_bool_t ares_dns_rec_type_fromstr(ares_dns_rec_type_t *qtype,
     { "DNSKEY",     ARES_REC_TYPE_DNSKEY     },
     { "NSEC3",      ARES_REC_TYPE_NSEC3      },
     { "NSEC3PARAM", ARES_REC_TYPE_NSEC3PARAM },
+    { "CDS",        ARES_REC_TYPE_CDS        },
+    { "CDNSKEY",    ARES_REC_TYPE_CDNSKEY    },
     { "TLSA",       ARES_REC_TYPE_TLSA       },
     { "SVCB",       ARES_REC_TYPE_SVCB       },
     { "HTTPS",      ARES_REC_TYPE_HTTPS      },

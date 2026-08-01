@@ -239,6 +239,18 @@ Keys used for handling RR record parameters:
 .B ARES_RR_SIG_SIGNATURE
 - SIG Record. Signature. Datatype: \fIARES_DATATYPE_BIN\fP
 .br
+.B ARES_RR_KEY_FLAGS
+- KEY Record. Flags. Datatype: \fIARES_DATATYPE_U16\fP
+.br
+.B ARES_RR_KEY_PROTOCOL
+- KEY Record. Protocol. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_KEY_ALGORITHM
+- KEY Record. Algorithm. See \fIares_dnssec_algorithm_t\fP. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_KEY_PUBLIC_KEY
+- KEY Record. Public Key. Datatype: \fIARES_DATATYPE_BIN\fP
+.br
 .B ARES_RR_AAAA_ADDR
 - AAAA Record. Address. Datatype: \fIARES_DATATYPE_INADDR6\fP
 .br
@@ -379,6 +391,30 @@ Keys used for handling RR record parameters:
 .br
 .B ARES_RR_NSEC3PARAM_SALT
 - NSEC3PARAM Record. Salt. Datatype: \fIARES_DATATYPE_BIN\fP
+.br
+.B ARES_RR_CDS_KEY_TAG
+- CDS Record. Key Tag. Datatype: \fIARES_DATATYPE_U16\fP
+.br
+.B ARES_RR_CDS_ALGORITHM
+- CDS Record. Algorithm. See \fIares_dnssec_algorithm_t\fP. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_CDS_DIGEST_TYPE
+- CDS Record. Digest Type. See \fIares_ds_digest_t\fP. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_CDS_DIGEST
+- CDS Record. Digest. Datatype: \fIARES_DATATYPE_BIN\fP
+.br
+.B ARES_RR_CDNSKEY_FLAGS
+- CDNSKEY Record. Flags. Datatype: \fIARES_DATATYPE_U16\fP
+.br
+.B ARES_RR_CDNSKEY_PROTOCOL
+- CDNSKEY Record. Protocol. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_CDNSKEY_ALGORITHM
+- CDNSKEY Record. Algorithm. See \fIares_dnssec_algorithm_t\fP. Datatype: \fIARES_DATATYPE_U8\fP
+.br
+.B ARES_RR_CDNSKEY_PUBLIC_KEY
+- CDNSKEY Record. Public Key. Datatype: \fIARES_DATATYPE_BIN\fP
 .br
 .B ARES_RR_TLSA_CERT_USAGE
 - TLSA Record. Certificate Usage. See \fIares_tlsa_usage_t\fP. Datatype: \fIARES_DATATYPE_U8\fP

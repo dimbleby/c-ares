@@ -3147,6 +3147,233 @@ TEST_F(LibraryTest, ZeroLengthRawRrKeepsType) {
   ares_dns_record_destroy(parsed);
 }
 
+TEST_F(LibraryTest, DNSSECRecordWireFormats)
+{
+  ares_dns_record_t   *parsed = NULL;
+  ares_dns_rr_t       *rr     = NULL;
+  unsigned char       *written;
+  size_t               written_len;
+  size_t               len;
+  const unsigned char *bin;
+
+  /* Independent wire vector for the formats in RFC 2535 section 3.1,
+   * RFC 7344 sections 3.1 and 4.1, and the deletion signals in RFC 8078
+   * sections 3 and 4. */
+  const unsigned char  pkt[] = {
+    /* Header: response with one question and six answers. */
+    0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00,
+    /* Question: root, type ANY, class IN. */
+    0x00, 0x00, 0xff, 0x00, 0x01,
+    /* KEY: flags, protocol, algorithm, public key. */
+    0x00, 0x00, 0x19, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x08, 0x00,
+    0xc0, 0x03, 0x08, 0xde, 0xad, 0xbe, 0xef,
+    /* Null KEY: flags indicate no key, protocol and algorithm are zero. */
+    0x00, 0x00, 0x19, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 0xc0,
+    0x00, 0x00, 0x00,
+    /* CDS: key tag, algorithm, digest type, digest. */
+    0x00, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x08, 0x12,
+    0x34, 0x0d, 0x02, 0x01, 0x02, 0x03, 0x04,
+    /* CDS deletion signal: one zero digest octet. */
+    0x00, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x05, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    /* CDNSKEY: flags, protocol, algorithm, public key. */
+    0x00, 0x00, 0x3c, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x07, 0x01,
+    0x01, 0x03, 0x0d, 0xaa, 0xbb, 0xcc,
+    /* CDNSKEY deletion signal: one zero key octet. */
+    0x00, 0x00, 0x3c, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x05, 0x00,
+    0x00, 0x03, 0x00, 0x00
+  };
+
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_parse(pkt, sizeof(pkt), 0, &parsed));
+  ASSERT_NE(nullptr, parsed);
+  ASSERT_EQ(6, ares_dns_record_rr_cnt(parsed, ARES_SECTION_ANSWER));
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 0);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_KEY, ares_dns_rr_get_type(rr));
+  EXPECT_EQ(0x00c0, ares_dns_rr_get_u16(rr, ARES_RR_KEY_FLAGS));
+  EXPECT_EQ(3, ares_dns_rr_get_u8(rr, ARES_RR_KEY_PROTOCOL));
+  EXPECT_EQ(8, ares_dns_rr_get_u8(rr, ARES_RR_KEY_ALGORITHM));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_KEY_PUBLIC_KEY, &len);
+  ASSERT_NE(nullptr, bin);
+  ASSERT_EQ(4, len);
+  EXPECT_EQ(0xde, bin[0]);
+  EXPECT_EQ(0xef, bin[3]);
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 1);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_KEY, ares_dns_rr_get_type(rr));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_KEY_PUBLIC_KEY, &len);
+  EXPECT_EQ(nullptr, bin);
+  EXPECT_EQ(0, len);
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 2);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_CDS, ares_dns_rr_get_type(rr));
+  EXPECT_EQ(0x1234, ares_dns_rr_get_u16(rr, ARES_RR_CDS_KEY_TAG));
+  EXPECT_EQ(13, ares_dns_rr_get_u8(rr, ARES_RR_CDS_ALGORITHM));
+  EXPECT_EQ(2, ares_dns_rr_get_u8(rr, ARES_RR_CDS_DIGEST_TYPE));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_CDS_DIGEST, &len);
+  ASSERT_NE(nullptr, bin);
+  ASSERT_EQ(4, len);
+  EXPECT_EQ(1, bin[0]);
+  EXPECT_EQ(4, bin[3]);
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 3);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_CDS, ares_dns_rr_get_type(rr));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_CDS_DIGEST, &len);
+  ASSERT_NE(nullptr, bin);
+  ASSERT_EQ(1, len);
+  EXPECT_EQ(0, bin[0]);
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 4);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_CDNSKEY, ares_dns_rr_get_type(rr));
+  EXPECT_EQ(257, ares_dns_rr_get_u16(rr, ARES_RR_CDNSKEY_FLAGS));
+  EXPECT_EQ(3, ares_dns_rr_get_u8(rr, ARES_RR_CDNSKEY_PROTOCOL));
+  EXPECT_EQ(13, ares_dns_rr_get_u8(rr, ARES_RR_CDNSKEY_ALGORITHM));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_CDNSKEY_PUBLIC_KEY, &len);
+  ASSERT_NE(nullptr, bin);
+  ASSERT_EQ(3, len);
+  EXPECT_EQ(0xaa, bin[0]);
+  EXPECT_EQ(0xcc, bin[2]);
+
+  rr = ares_dns_record_rr_get(parsed, ARES_SECTION_ANSWER, 5);
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_REC_TYPE_CDNSKEY, ares_dns_rr_get_type(rr));
+  bin = ares_dns_rr_get_bin(rr, ARES_RR_CDNSKEY_PUBLIC_KEY, &len);
+  ASSERT_NE(nullptr, bin);
+  ASSERT_EQ(1, len);
+  EXPECT_EQ(0, bin[0]);
+
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_write(parsed, &written, &written_len));
+  ASSERT_EQ(sizeof(pkt), written_len);
+  EXPECT_EQ(0, memcmp(pkt, written, sizeof(pkt)));
+
+  ares_free_string(written);
+  ares_dns_record_destroy(parsed);
+}
+
+TEST_F(LibraryTest, DNSSECRecordTruncatedRdataRejected)
+{
+  ares_dns_record_t  *parsed = NULL;
+
+  /* DNSKEY: flags, protocol, algorithm, but zero bytes of key material.
+   * Unlike KEY, DNSKEY has no "no key" signal, so this MUST be rejected. */
+  const unsigned char dnskey_pkt[] = { 0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00,
+                                       0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                       0xff, 0x00, 0x01, 0x00, 0x00, 0x30, 0x00,
+                                       0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04,
+                                       0x01, 0x01, 0x03, 0x0d };
+
+  /* CDNSKEY: same rule applies as DNSKEY. */
+  const unsigned char cdnskey_pkt[] = {
+    0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xff, 0x00, 0x01, 0x00, 0x00, 0x3c, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 0x01, 0x01, 0x03, 0x0d
+  };
+
+  /* CDS: key tag, algorithm, digest type, but zero bytes of digest. */
+  const unsigned char cds_pkt[] = { 0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00,
+                                    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0xff, 0x00, 0x01, 0x00, 0x00, 0x3b, 0x00,
+                                    0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04,
+                                    0x12, 0x34, 0x0d, 0x02 };
+
+  EXPECT_EQ(ARES_EBADRESP,
+            ares_dns_parse(dnskey_pkt, sizeof(dnskey_pkt), 0, &parsed));
+  ASSERT_EQ(nullptr, parsed);
+
+  EXPECT_EQ(ARES_EBADRESP,
+            ares_dns_parse(cdnskey_pkt, sizeof(cdnskey_pkt), 0, &parsed));
+  ASSERT_EQ(nullptr, parsed);
+
+  EXPECT_EQ(ARES_EBADRESP,
+            ares_dns_parse(cds_pkt, sizeof(cds_pkt), 0, &parsed));
+  ASSERT_EQ(nullptr, parsed);
+}
+
+TEST_F(LibraryTest, DNSSECRecordEmptyKeyRejectedOnWrite)
+{
+  ares_dns_record_t *dnsrec = NULL;
+  ares_dns_rr_t     *rr     = NULL;
+  unsigned char     *msg    = NULL;
+  size_t             msglen = 0;
+
+  /* DNSKEY and CDNSKEY, unlike KEY, MUST NOT have an empty public key. */
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_record_create(&dnsrec, 0x1234, ARES_FLAG_QR,
+                                   ARES_OPCODE_QUERY, ARES_RCODE_NOERROR));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_record_rr_add(
+                            &rr, dnsrec, ARES_SECTION_ANSWER, "example.com",
+                            ARES_REC_TYPE_DNSKEY, ARES_CLASS_IN, 60));
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u16(rr, ARES_RR_DNSKEY_FLAGS, 257));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u8(rr, ARES_RR_DNSKEY_PROTOCOL, 3));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u8(rr, ARES_RR_DNSKEY_ALGORITHM, 13));
+  EXPECT_EQ(ARES_EFORMERR, ares_dns_write(dnsrec, &msg, &msglen));
+  ares_dns_record_destroy(dnsrec);
+  dnsrec = NULL;
+
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_record_create(&dnsrec, 0x1234, ARES_FLAG_QR,
+                                   ARES_OPCODE_QUERY, ARES_RCODE_NOERROR));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_record_rr_add(
+                            &rr, dnsrec, ARES_SECTION_ANSWER, "example.com",
+                            ARES_REC_TYPE_CDNSKEY, ARES_CLASS_IN, 60));
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u16(rr, ARES_RR_CDNSKEY_FLAGS, 257));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u8(rr, ARES_RR_CDNSKEY_PROTOCOL, 3));
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_rr_set_u8(rr, ARES_RR_CDNSKEY_ALGORITHM, 13));
+  EXPECT_EQ(ARES_EFORMERR, ares_dns_write(dnsrec, &msg, &msglen));
+  ares_dns_record_destroy(dnsrec);
+}
+
+TEST_F(LibraryTest, SIGSignerNameIsNotCompressed)
+{
+  ares_dns_record_t  *dnsrec      = NULL;
+  ares_dns_rr_t      *rr          = NULL;
+  unsigned char      *msg         = NULL;
+  size_t              msglen      = 0;
+  const unsigned char signature[] = { 0xaa };
+
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_record_create(&dnsrec, 0x1234, ARES_FLAG_QR,
+                                   ARES_OPCODE_QUERY, ARES_RCODE_NOERROR));
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_record_query_add(dnsrec, "example.com", ARES_REC_TYPE_SIG,
+                                      ARES_CLASS_IN));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_record_rr_add(
+                            &rr, dnsrec, ARES_SECTION_ANSWER, "example.com",
+                            ARES_REC_TYPE_SIG, ARES_CLASS_IN, 60));
+  ASSERT_NE(nullptr, rr);
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_rr_set_u16(rr, ARES_RR_SIG_TYPE_COVERED, ARES_REC_TYPE_A));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u8(rr, ARES_RR_SIG_ALGORITHM, 1));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u8(rr, ARES_RR_SIG_LABELS, 2));
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_rr_set_u32(rr, ARES_RR_SIG_ORIGINAL_TTL, 60));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u32(rr, ARES_RR_SIG_EXPIRATION, 2));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u32(rr, ARES_RR_SIG_INCEPTION, 1));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_u16(rr, ARES_RR_SIG_KEY_TAG, 0x1234));
+  EXPECT_EQ(ARES_SUCCESS,
+            ares_dns_rr_set_str(rr, ARES_RR_SIG_SIGNERS_NAME, "example.com"));
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_rr_set_bin(rr, ARES_RR_SIG_SIGNATURE,
+                                              signature, sizeof(signature)));
+
+  EXPECT_EQ(ARES_SUCCESS, ares_dns_write(dnsrec, &msg, &msglen));
+  ASSERT_GE(msglen, 72);
+  /* Header (12), question (17), compressed RR owner and fixed fields (12),
+   * then the 18 fixed SIG RDATA octets. */
+  EXPECT_EQ(0x07, msg[59]);
+  EXPECT_EQ(0, memcmp(msg + 12, msg + 59, 13));
+
+  ares_free_string(msg);
+  ares_dns_record_destroy(dnsrec);
+}
+
 TEST_F(LibraryTest, RawRrTypeTostrFromstrRoundtrip) {
   const char         *str;
   ares_dns_rec_type_t qtype = (ares_dns_rec_type_t)0;

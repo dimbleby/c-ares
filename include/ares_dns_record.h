@@ -52,6 +52,7 @@ typedef enum {
   ARES_REC_TYPE_MX         = 15, /*!< Mail routing information. */
   ARES_REC_TYPE_TXT        = 16, /*!< Text strings. */
   ARES_REC_TYPE_SIG        = 24, /*!< RFC 2535 / RFC 2931. SIG Record */
+  ARES_REC_TYPE_KEY        = 25, /*!< RFC 2535. Public Key */
   ARES_REC_TYPE_AAAA       = 28, /*!< RFC 3596. Ip6 Address. */
   ARES_REC_TYPE_SRV        = 33, /*!< RFC 2782. Server Selection. */
   ARES_REC_TYPE_NAPTR      = 35, /*!< RFC 3403. Naming Authority Pointer */
@@ -67,9 +68,11 @@ typedef enum {
   ARES_REC_TYPE_TLSA = 52,     /*!< RFC 6698. DNS-Based Authentication of Named
                                 *   Entities (DANE) Transport Layer Security
                                 *   (TLS) Protocol: TLSA */
-  ARES_REC_TYPE_SVCB  = 64,    /*!< RFC 9460. General Purpose Service Binding */
-  ARES_REC_TYPE_HTTPS = 65,    /*!< RFC 9460. Service Binding type for use with
-                                *   HTTPS */
+  ARES_REC_TYPE_CDS     = 59,     /*!< RFC 7344. Child DS */
+  ARES_REC_TYPE_CDNSKEY = 60,     /*!< RFC 7344. Child DNSKEY */
+  ARES_REC_TYPE_SVCB    = 64, /*!< RFC 9460. General Purpose Service Binding */
+  ARES_REC_TYPE_HTTPS   = 65, /*!< RFC 9460. Service Binding type for use with
+                               *   HTTPS */
   ARES_REC_TYPE_ANY = 255,     /*!< Wildcard match.  Not response RR. */
   ARES_REC_TYPE_URI = 256,     /*!< RFC 7553. Uniform Resource Identifier */
   ARES_REC_TYPE_CAA = 257,     /*!< RFC 6844. Certification Authority
@@ -238,6 +241,14 @@ typedef enum {
   ARES_RR_SIG_SIGNERS_NAME = (ARES_REC_TYPE_SIG * 100) + 8,
   /*! SIG Record. Signature. Datatype: BIN */
   ARES_RR_SIG_SIGNATURE = (ARES_REC_TYPE_SIG * 100) + 9,
+  /*! KEY Record. Flags. Datatype: U16 */
+  ARES_RR_KEY_FLAGS = (ARES_REC_TYPE_KEY * 100) + 1,
+  /*! KEY Record. Protocol. Datatype: U8 */
+  ARES_RR_KEY_PROTOCOL = (ARES_REC_TYPE_KEY * 100) + 2,
+  /*! KEY Record. Algorithm. Datatype: U8 */
+  ARES_RR_KEY_ALGORITHM = (ARES_REC_TYPE_KEY * 100) + 3,
+  /*! KEY Record. Public Key. Datatype: BIN */
+  ARES_RR_KEY_PUBLIC_KEY = (ARES_REC_TYPE_KEY * 100) + 4,
   /*! AAAA Record. Address. Datatype: INADDR6 */
   ARES_RR_AAAA_ADDR = (ARES_REC_TYPE_AAAA * 100) + 1,
   /*! SRV Record. Priority. Datatype: U16 */
@@ -332,6 +343,22 @@ typedef enum {
   ARES_RR_NSEC3PARAM_ITERATIONS = (ARES_REC_TYPE_NSEC3PARAM * 100) + 3,
   /*! NSEC3PARAM Record. Salt. Datatype: BIN */
   ARES_RR_NSEC3PARAM_SALT = (ARES_REC_TYPE_NSEC3PARAM * 100) + 4,
+  /*! CDS Record. Key Tag. Datatype: U16 */
+  ARES_RR_CDS_KEY_TAG = (ARES_REC_TYPE_CDS * 100) + 1,
+  /*! CDS Record. Algorithm. Datatype: U8 */
+  ARES_RR_CDS_ALGORITHM = (ARES_REC_TYPE_CDS * 100) + 2,
+  /*! CDS Record. Digest Type. Datatype: U8 */
+  ARES_RR_CDS_DIGEST_TYPE = (ARES_REC_TYPE_CDS * 100) + 3,
+  /*! CDS Record. Digest. Datatype: BIN */
+  ARES_RR_CDS_DIGEST = (ARES_REC_TYPE_CDS * 100) + 4,
+  /*! CDNSKEY Record. Flags. Datatype: U16 */
+  ARES_RR_CDNSKEY_FLAGS = (ARES_REC_TYPE_CDNSKEY * 100) + 1,
+  /*! CDNSKEY Record. Protocol. Datatype: U8 */
+  ARES_RR_CDNSKEY_PROTOCOL = (ARES_REC_TYPE_CDNSKEY * 100) + 2,
+  /*! CDNSKEY Record. Algorithm. Datatype: U8 */
+  ARES_RR_CDNSKEY_ALGORITHM = (ARES_REC_TYPE_CDNSKEY * 100) + 3,
+  /*! CDNSKEY Record. Public Key. Datatype: BIN */
+  ARES_RR_CDNSKEY_PUBLIC_KEY = (ARES_REC_TYPE_CDNSKEY * 100) + 4,
   /*! TLSA Record. Certificate Usage. Datatype: U8 */
   ARES_RR_TLSA_CERT_USAGE = (ARES_REC_TYPE_TLSA * 100) + 1,
   /*! TLSA Record. Selector. Datatype: U8 */

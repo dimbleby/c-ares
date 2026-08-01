@@ -499,9 +499,10 @@ static ares_status_t ares_dns_write_rr_sig(ares_buf_t          *buf,
     return status; /* LCOV_EXCL_LINE: OutOfMemory */
   }
 
-  /* SIGNERS NAME */
-  status = ares_dns_write_rr_name(buf, rr, namelist, ARES_FALSE,
-                                  ARES_RR_SIG_SIGNERS_NAME);
+  /* RFC 2535 4.1.7: "A sender MUST NOT use DNS name compression on the
+   *                  Signer's Name field when transmitting a SIG RR." */
+  status =
+    ares_dns_write_rr_name(buf, rr, NULL, ARES_FALSE, ARES_RR_SIG_SIGNERS_NAME);
   if (status != ARES_SUCCESS) {
     return status;
   }
@@ -681,37 +682,56 @@ static ares_status_t ares_dns_write_rr_opt(ares_buf_t          *buf,
   return ARES_SUCCESS;
 }
 
-static ares_status_t ares_dns_write_rr_ds(ares_buf_t          *buf,
-                                          const ares_dns_rr_t *rr,
-                                          ares_llist_t       **namelist)
+static ares_status_t ares_dns_write_rr_ds_keys(
+  ares_buf_t *buf, const ares_dns_rr_t *rr, ares_dns_rr_key_t key_tag_key,
+  ares_dns_rr_key_t algorithm_key, ares_dns_rr_key_t digest_type_key,
+  ares_dns_rr_key_t digest_key)
 {
   ares_status_t        status;
   const unsigned char *data;
   size_t               len = 0;
 
-  (void)namelist;
-
-  status = ares_dns_write_rr_be16(buf, rr, ARES_RR_DS_KEY_TAG);
+  status = ares_dns_write_rr_be16(buf, rr, key_tag_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_write_rr_u8(buf, rr, ARES_RR_DS_ALGORITHM);
+  status = ares_dns_write_rr_u8(buf, rr, algorithm_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_write_rr_u8(buf, rr, ARES_RR_DS_DIGEST_TYPE);
+  status = ares_dns_write_rr_u8(buf, rr, digest_type_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  data = ares_dns_rr_get_bin(rr, ARES_RR_DS_DIGEST, &len);
+  data = ares_dns_rr_get_bin(rr, digest_key, &len);
   if (data == NULL || len == 0) {
     return ARES_EFORMERR;
   }
 
   return ares_buf_append(buf, data, len);
+}
+
+static ares_status_t ares_dns_write_rr_ds(ares_buf_t          *buf,
+                                          const ares_dns_rr_t *rr,
+                                          ares_llist_t       **namelist)
+{
+  (void)namelist;
+  return ares_dns_write_rr_ds_keys(buf, rr, ARES_RR_DS_KEY_TAG,
+                                   ARES_RR_DS_ALGORITHM, ARES_RR_DS_DIGEST_TYPE,
+                                   ARES_RR_DS_DIGEST);
+}
+
+static ares_status_t ares_dns_write_rr_cds(ares_buf_t          *buf,
+                                           const ares_dns_rr_t *rr,
+                                           ares_llist_t       **namelist)
+{
+  (void)namelist;
+  return ares_dns_write_rr_ds_keys(buf, rr, ARES_RR_CDS_KEY_TAG,
+                                   ARES_RR_CDS_ALGORITHM,
+                                   ARES_RR_CDS_DIGEST_TYPE, ARES_RR_CDS_DIGEST);
 }
 
 static ares_status_t ares_dns_write_rr_sshfp(ares_buf_t          *buf,
@@ -829,37 +849,69 @@ static ares_status_t ares_dns_write_rr_nsec(ares_buf_t          *buf,
   return ares_buf_append(buf, data, len);
 }
 
-static ares_status_t ares_dns_write_rr_dnskey(ares_buf_t          *buf,
-                                              const ares_dns_rr_t *rr,
-                                              ares_llist_t       **namelist)
+static ares_status_t ares_dns_write_rr_key_keys(
+  ares_buf_t *buf, const ares_dns_rr_t *rr, ares_dns_rr_key_t flags_key,
+  ares_dns_rr_key_t protocol_key, ares_dns_rr_key_t algorithm_key,
+  ares_dns_rr_key_t public_key_key, ares_bool_t allow_empty_public_key)
 {
   ares_status_t        status;
   const unsigned char *data;
   size_t               len = 0;
 
-  (void)namelist;
-
-  status = ares_dns_write_rr_be16(buf, rr, ARES_RR_DNSKEY_FLAGS);
+  status = ares_dns_write_rr_be16(buf, rr, flags_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_write_rr_u8(buf, rr, ARES_RR_DNSKEY_PROTOCOL);
+  status = ares_dns_write_rr_u8(buf, rr, protocol_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_write_rr_u8(buf, rr, ARES_RR_DNSKEY_ALGORITHM);
+  status = ares_dns_write_rr_u8(buf, rr, algorithm_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  data = ares_dns_rr_get_bin(rr, ARES_RR_DNSKEY_PUBLIC_KEY, &len);
-  if (data == NULL || len == 0) {
+  data = ares_dns_rr_get_bin(rr, public_key_key, &len);
+  if (len == 0) {
+    return allow_empty_public_key ? ARES_SUCCESS : ARES_EFORMERR;
+  }
+  if (data == NULL) {
     return ARES_EFORMERR;
   }
 
   return ares_buf_append(buf, data, len);
+}
+
+static ares_status_t ares_dns_write_rr_key(ares_buf_t          *buf,
+                                           const ares_dns_rr_t *rr,
+                                           ares_llist_t       **namelist)
+{
+  (void)namelist;
+  return ares_dns_write_rr_key_keys(buf, rr, ARES_RR_KEY_FLAGS,
+                                    ARES_RR_KEY_PROTOCOL, ARES_RR_KEY_ALGORITHM,
+                                    ARES_RR_KEY_PUBLIC_KEY, ARES_TRUE);
+}
+
+static ares_status_t ares_dns_write_rr_dnskey(ares_buf_t          *buf,
+                                              const ares_dns_rr_t *rr,
+                                              ares_llist_t       **namelist)
+{
+  (void)namelist;
+  return ares_dns_write_rr_key_keys(
+    buf, rr, ARES_RR_DNSKEY_FLAGS, ARES_RR_DNSKEY_PROTOCOL,
+    ARES_RR_DNSKEY_ALGORITHM, ARES_RR_DNSKEY_PUBLIC_KEY, ARES_FALSE);
+}
+
+static ares_status_t ares_dns_write_rr_cdnskey(ares_buf_t          *buf,
+                                               const ares_dns_rr_t *rr,
+                                               ares_llist_t       **namelist)
+{
+  (void)namelist;
+  return ares_dns_write_rr_key_keys(
+    buf, rr, ARES_RR_CDNSKEY_FLAGS, ARES_RR_CDNSKEY_PROTOCOL,
+    ARES_RR_CDNSKEY_ALGORITHM, ARES_RR_CDNSKEY_PUBLIC_KEY, ARES_FALSE);
 }
 
 static ares_status_t ares_dns_write_rr_nsec3(ares_buf_t          *buf,
@@ -1328,6 +1380,9 @@ static ares_status_t ares_dns_write_rr(const ares_dns_record_t *dnsrec,
       case ARES_REC_TYPE_SIG:
         status = ares_dns_write_rr_sig(buf, rr, namelistptr);
         break;
+      case ARES_REC_TYPE_KEY:
+        status = ares_dns_write_rr_key(buf, rr, namelistptr);
+        break;
       case ARES_REC_TYPE_AAAA:
         status = ares_dns_write_rr_aaaa(buf, rr, namelistptr);
         break;
@@ -1363,6 +1418,12 @@ static ares_status_t ares_dns_write_rr(const ares_dns_record_t *dnsrec,
         break;
       case ARES_REC_TYPE_NSEC3PARAM:
         status = ares_dns_write_rr_nsec3param(buf, rr, namelistptr);
+        break;
+      case ARES_REC_TYPE_CDS:
+        status = ares_dns_write_rr_cds(buf, rr, namelistptr);
+        break;
+      case ARES_REC_TYPE_CDNSKEY:
+        status = ares_dns_write_rr_cdnskey(buf, rr, namelistptr);
         break;
       case ARES_REC_TYPE_TLSA:
         status = ares_dns_write_rr_tlsa(buf, rr, namelistptr);

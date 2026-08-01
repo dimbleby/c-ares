@@ -528,25 +528,27 @@ static ares_status_t ares_dns_parse_rr_opt(ares_buf_t *buf, ares_dns_rr_t *rr,
   return ARES_SUCCESS;
 }
 
-static ares_status_t ares_dns_parse_rr_ds(ares_buf_t *buf, ares_dns_rr_t *rr,
-                                          size_t rdlength)
+static ares_status_t ares_dns_parse_rr_ds_keys(
+  ares_buf_t *buf, ares_dns_rr_t *rr, size_t rdlength,
+  ares_dns_rr_key_t key_tag_key, ares_dns_rr_key_t algorithm_key,
+  ares_dns_rr_key_t digest_type_key, ares_dns_rr_key_t digest_key)
 {
   ares_status_t  status;
   size_t         orig_len = ares_buf_len(buf);
   size_t         len;
   unsigned char *data;
 
-  status = ares_dns_parse_and_set_be16(buf, rr, ARES_RR_DS_KEY_TAG);
+  status = ares_dns_parse_and_set_be16(buf, rr, key_tag_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_parse_and_set_u8(buf, rr, ARES_RR_DS_ALGORITHM);
+  status = ares_dns_parse_and_set_u8(buf, rr, algorithm_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_parse_and_set_u8(buf, rr, ARES_RR_DS_DIGEST_TYPE);
+  status = ares_dns_parse_and_set_u8(buf, rr, digest_type_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
@@ -561,13 +563,29 @@ static ares_status_t ares_dns_parse_rr_ds(ares_buf_t *buf, ares_dns_rr_t *rr,
     return status;
   }
 
-  status = ares_dns_rr_set_bin_own(rr, ARES_RR_DS_DIGEST, data, len);
+  status = ares_dns_rr_set_bin_own(rr, digest_key, data, len);
   if (status != ARES_SUCCESS) {
     ares_free(data);
     return status;
   }
 
   return ARES_SUCCESS;
+}
+
+static ares_status_t ares_dns_parse_rr_ds(ares_buf_t *buf, ares_dns_rr_t *rr,
+                                          size_t rdlength)
+{
+  return ares_dns_parse_rr_ds_keys(buf, rr, rdlength, ARES_RR_DS_KEY_TAG,
+                                   ARES_RR_DS_ALGORITHM, ARES_RR_DS_DIGEST_TYPE,
+                                   ARES_RR_DS_DIGEST);
+}
+
+static ares_status_t ares_dns_parse_rr_cds(ares_buf_t *buf, ares_dns_rr_t *rr,
+                                           size_t rdlength)
+{
+  return ares_dns_parse_rr_ds_keys(buf, rr, rdlength, ARES_RR_CDS_KEY_TAG,
+                                   ARES_RR_CDS_ALGORITHM,
+                                   ARES_RR_CDS_DIGEST_TYPE, ARES_RR_CDS_DIGEST);
 }
 
 static ares_status_t ares_dns_parse_rr_sshfp(ares_buf_t *buf, ares_dns_rr_t *rr,
@@ -708,46 +726,76 @@ static ares_status_t ares_dns_parse_rr_nsec(ares_buf_t *buf, ares_dns_rr_t *rr,
   return ARES_SUCCESS;
 }
 
-static ares_status_t
-  ares_dns_parse_rr_dnskey(ares_buf_t *buf, ares_dns_rr_t *rr, size_t rdlength)
+static ares_status_t ares_dns_parse_rr_key_keys(
+  ares_buf_t *buf, ares_dns_rr_t *rr, size_t rdlength,
+  ares_dns_rr_key_t flags_key, ares_dns_rr_key_t protocol_key,
+  ares_dns_rr_key_t algorithm_key, ares_dns_rr_key_t public_key_key,
+  ares_bool_t allow_empty_public_key)
 {
   ares_status_t  status;
   size_t         orig_len = ares_buf_len(buf);
   size_t         len;
   unsigned char *data;
 
-  status = ares_dns_parse_and_set_be16(buf, rr, ARES_RR_DNSKEY_FLAGS);
+  status = ares_dns_parse_and_set_be16(buf, rr, flags_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_parse_and_set_u8(buf, rr, ARES_RR_DNSKEY_PROTOCOL);
+  status = ares_dns_parse_and_set_u8(buf, rr, protocol_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
-  status = ares_dns_parse_and_set_u8(buf, rr, ARES_RR_DNSKEY_ALGORITHM);
+  status = ares_dns_parse_and_set_u8(buf, rr, algorithm_key);
   if (status != ARES_SUCCESS) {
     return status;
   }
 
   len = ares_dns_rr_remaining_len(buf, orig_len, rdlength);
-  if (len == 0) {
+  if (len == 0 && !allow_empty_public_key) {
     return ARES_EBADRESP;
   }
 
-  status = ares_buf_fetch_bytes_dup(buf, len, ARES_FALSE, &data);
-  if (status != ARES_SUCCESS) {
-    return status;
+  data = NULL;
+  if (len != 0) {
+    status = ares_buf_fetch_bytes_dup(buf, len, ARES_FALSE, &data);
+    if (status != ARES_SUCCESS) {
+      return status;
+    }
   }
 
-  status = ares_dns_rr_set_bin_own(rr, ARES_RR_DNSKEY_PUBLIC_KEY, data, len);
+  status = ares_dns_rr_set_bin_own(rr, public_key_key, data, len);
   if (status != ARES_SUCCESS) {
     ares_free(data);
     return status;
   }
 
   return ARES_SUCCESS;
+}
+
+static ares_status_t ares_dns_parse_rr_key(ares_buf_t *buf, ares_dns_rr_t *rr,
+                                           size_t rdlength)
+{
+  return ares_dns_parse_rr_key_keys(buf, rr, rdlength, ARES_RR_KEY_FLAGS,
+                                    ARES_RR_KEY_PROTOCOL, ARES_RR_KEY_ALGORITHM,
+                                    ARES_RR_KEY_PUBLIC_KEY, ARES_TRUE);
+}
+
+static ares_status_t
+  ares_dns_parse_rr_dnskey(ares_buf_t *buf, ares_dns_rr_t *rr, size_t rdlength)
+{
+  return ares_dns_parse_rr_key_keys(
+    buf, rr, rdlength, ARES_RR_DNSKEY_FLAGS, ARES_RR_DNSKEY_PROTOCOL,
+    ARES_RR_DNSKEY_ALGORITHM, ARES_RR_DNSKEY_PUBLIC_KEY, ARES_FALSE);
+}
+
+static ares_status_t
+  ares_dns_parse_rr_cdnskey(ares_buf_t *buf, ares_dns_rr_t *rr, size_t rdlength)
+{
+  return ares_dns_parse_rr_key_keys(
+    buf, rr, rdlength, ARES_RR_CDNSKEY_FLAGS, ARES_RR_CDNSKEY_PROTOCOL,
+    ARES_RR_CDNSKEY_ALGORITHM, ARES_RR_CDNSKEY_PUBLIC_KEY, ARES_FALSE);
 }
 
 static ares_status_t ares_dns_parse_rr_nsec3(ares_buf_t *buf, ares_dns_rr_t *rr,
@@ -1330,6 +1378,8 @@ static ares_status_t
       return ares_dns_parse_rr_txt(buf, rr, rdlength);
     case ARES_REC_TYPE_SIG:
       return ares_dns_parse_rr_sig(buf, rr, rdlength);
+    case ARES_REC_TYPE_KEY:
+      return ares_dns_parse_rr_key(buf, rr, rdlength);
     case ARES_REC_TYPE_AAAA:
       return ares_dns_parse_rr_aaaa(buf, rr, rdlength);
     case ARES_REC_TYPE_SRV:
@@ -1354,6 +1404,10 @@ static ares_status_t
       return ares_dns_parse_rr_nsec3(buf, rr, rdlength);
     case ARES_REC_TYPE_NSEC3PARAM:
       return ares_dns_parse_rr_nsec3param(buf, rr, rdlength);
+    case ARES_REC_TYPE_CDS:
+      return ares_dns_parse_rr_cds(buf, rr, rdlength);
+    case ARES_REC_TYPE_CDNSKEY:
+      return ares_dns_parse_rr_cdnskey(buf, rr, rdlength);
     case ARES_REC_TYPE_TLSA:
       return ares_dns_parse_rr_tlsa(buf, rr, rdlength);
     case ARES_REC_TYPE_SVCB:

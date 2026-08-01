@@ -176,6 +176,10 @@ static void ares_dns_rr_free(ares_dns_rr_t *rr)
       ares_free(rr->r.sig.signature);
       break;
 
+    case ARES_REC_TYPE_KEY:
+      ares_free(rr->r.key.public_key);
+      break;
+
     case ARES_REC_TYPE_SRV:
       ares_free(rr->r.srv.target);
       break;
@@ -221,6 +225,14 @@ static void ares_dns_rr_free(ares_dns_rr_t *rr)
 
     case ARES_REC_TYPE_NSEC3PARAM:
       ares_free(rr->r.nsec3param.salt);
+      break;
+
+    case ARES_REC_TYPE_CDS:
+      ares_free(rr->r.cds.digest);
+      break;
+
+    case ARES_REC_TYPE_CDNSKEY:
+      ares_free(rr->r.cdnskey.public_key);
       break;
 
     case ARES_REC_TYPE_TLSA:
@@ -723,6 +735,22 @@ static void *ares_dns_rr_data_ptr(ares_dns_rr_t *dns_rr, ares_dns_rr_key_t key,
       *lenptr = &dns_rr->r.ds.digest_len;
       return &dns_rr->r.ds.digest;
 
+    case ARES_RR_KEY_FLAGS:
+      return &dns_rr->r.key.flags;
+
+    case ARES_RR_KEY_PROTOCOL:
+      return &dns_rr->r.key.protocol;
+
+    case ARES_RR_KEY_ALGORITHM:
+      return &dns_rr->r.key.algorithm;
+
+    case ARES_RR_KEY_PUBLIC_KEY:
+      if (lenptr == NULL) {
+        return NULL;
+      }
+      *lenptr = &dns_rr->r.key.public_key_len;
+      return &dns_rr->r.key.public_key;
+
     case ARES_RR_SSHFP_ALGORITHM:
       return &dns_rr->r.sshfp.algorithm;
 
@@ -838,6 +866,38 @@ static void *ares_dns_rr_data_ptr(ares_dns_rr_t *dns_rr, ares_dns_rr_key_t key,
       }
       *lenptr = &dns_rr->r.nsec3param.salt_len;
       return &dns_rr->r.nsec3param.salt;
+
+    case ARES_RR_CDS_KEY_TAG:
+      return &dns_rr->r.cds.key_tag;
+
+    case ARES_RR_CDS_ALGORITHM:
+      return &dns_rr->r.cds.algorithm;
+
+    case ARES_RR_CDS_DIGEST_TYPE:
+      return &dns_rr->r.cds.digest_type;
+
+    case ARES_RR_CDS_DIGEST:
+      if (lenptr == NULL) {
+        return NULL;
+      }
+      *lenptr = &dns_rr->r.cds.digest_len;
+      return &dns_rr->r.cds.digest;
+
+    case ARES_RR_CDNSKEY_FLAGS:
+      return &dns_rr->r.cdnskey.flags;
+
+    case ARES_RR_CDNSKEY_PROTOCOL:
+      return &dns_rr->r.cdnskey.protocol;
+
+    case ARES_RR_CDNSKEY_ALGORITHM:
+      return &dns_rr->r.cdnskey.algorithm;
+
+    case ARES_RR_CDNSKEY_PUBLIC_KEY:
+      if (lenptr == NULL) {
+        return NULL;
+      }
+      *lenptr = &dns_rr->r.cdnskey.public_key_len;
+      return &dns_rr->r.cdnskey.public_key;
 
     case ARES_RR_TLSA_CERT_USAGE:
       return &dns_rr->r.tlsa.cert_usage;

@@ -182,6 +182,13 @@ typedef struct {
   size_t         public_key_len;
 } ares_dns_dnskey_t;
 
+/* KEY and CDNSKEY have the same wire format as DNSKEY */
+typedef ares_dns_dnskey_t ares_dns_key_t;
+typedef ares_dns_dnskey_t ares_dns_cdnskey_t;
+
+/* CDS has the same wire format as DS */
+typedef ares_dns_ds_t     ares_dns_cds_t;
+
 typedef struct {
   unsigned char  hash_algorithm;
   unsigned char  flags;
@@ -289,6 +296,7 @@ struct ares_dns_rr {
     ares_dns_mx_t         mx;
     ares_dns_txt_t        txt;
     ares_dns_sig_t        sig;
+    ares_dns_key_t        key;
     ares_dns_rrsig_t      rrsig;
     ares_dns_ds_t         ds;
     ares_dns_sshfp_t      sshfp;
@@ -296,6 +304,8 @@ struct ares_dns_rr {
     ares_dns_dnskey_t     dnskey;
     ares_dns_nsec3_t      nsec3;
     ares_dns_nsec3param_t nsec3param;
+    ares_dns_cds_t        cds;
+    ares_dns_cdnskey_t    cdnskey;
     ares_dns_aaaa_t       aaaa;
     ares_dns_srv_t        srv;
     ares_dns_naptr_t      naptr;
